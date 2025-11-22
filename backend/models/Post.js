@@ -24,23 +24,22 @@ const QuizQuestionSchema = new mongoose.Schema({
 const PostSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
 
-  // Mural: Se preenchido, este post pertence ao mural do usuário alvo
-  postedTo: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+  // Destinos
+  community: { type: mongoose.Schema.Types.ObjectId, ref: "Community", default: null }, // Post de Comunidade
+  postedTo: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null }, // Post de Mural
 
-  type: {
-    type: String,
-    enum: ['blog', 'image', 'video', 'link', 'poll', 'quiz', 'question', 'wiki'],
-    default: 'blog'
-  },
+  // Moderação
+  isPinned: { type: Boolean, default: false }, // Post Afixado (Destaque)
+
+  type: { type: String, enum: ['blog', 'image', 'video', 'link', 'poll', 'quiz', 'question', 'wiki'], default: 'blog' },
 
   title: { type: String, default: "" },
   category: { type: String, default: "Geral" },
   text: { type: String, default: "" },
-
   mediaUrl: { type: String, default: "" },
   mediaType: { type: String, default: "" },
-
   linkUrl: { type: String, default: "" },
+
   pollOptions: [PollOptionSchema],
   quizQuestions: [QuizQuestionSchema],
 
@@ -48,7 +47,6 @@ const PostSchema = new mongoose.Schema({
   comments: [CommentSchema],
   repostOf: { type: mongoose.Schema.Types.ObjectId, ref: 'Post' },
   isEdited: { type: Boolean, default: false },
-
 }, { timestamps: true });
 
 export default mongoose.model("Post", PostSchema);

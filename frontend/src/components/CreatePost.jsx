@@ -13,8 +13,8 @@ const TYPES = [
 
 const CATEGORIES = ["Geral", "Dúvidas", "Discussão", "Arte", "Notícias", "Off-topic"];
 
-// Props: onCreated (callback), targetUserId (ID do dono do mural, opcional)
-export default function CreatePost({ onCreated, targetUserId }) {
+// Props: onCreated, targetUserId (Mural), communityId (Comunidade)
+export default function CreatePost({ onCreated, targetUserId, communityId }) {
   const [type, setType] = useState('blog');
   const [title, setTitle] = useState("");
   const [category, setCategory] = useState("Geral");
@@ -24,7 +24,6 @@ export default function CreatePost({ onCreated, targetUserId }) {
   const [loading, setLoading] = useState(false);
 
   const [pollOptions, setPollOptions] = useState([{ text: "" }, { text: "" }]);
-
   const [quizQuestion, setQuizQuestion] = useState("");
   const [quizOptions, setQuizOptions] = useState(["", "", "", ""]);
   const [correctIndex, setCorrectIndex] = useState(0);
@@ -55,10 +54,8 @@ export default function CreatePost({ onCreated, targetUserId }) {
       fd.append("category", category);
       fd.append("text", text);
 
-      // LÓGICA DO MURAL: Se targetUserId existe, envia postedTo
-      if (targetUserId) {
-        fd.append("postedTo", targetUserId);
-      }
+      // Lógica de Destino
+      if (targetUserId) fd.append("postedTo", targetUserId);
 
       if (type === 'link') fd.append("linkUrl", linkUrl);
 
@@ -70,28 +67,26 @@ export default function CreatePost({ onCreated, targetUserId }) {
 
       if (type === 'quiz') {
         if (!quizQuestion.trim()) throw new Error("Pergunta do quiz vazia.");
-        const q = {
-          question: quizQuestion,
-          options: quizOptions,
-          correctIndex: parseInt(correctIndex)
-        };
+        const q = { question: quizQuestion, options: quizOptions, correctIndex: parseInt(correctIndex) };
         fd.append("quizQuestions", JSON.stringify([q]));
       }
 
       if (file) fd.append("media", file);
 
-      const { data: newPost } = await api.post("/posts", fd, {
+      // SELECIONA A URL CORRETA
+      let endpoint = "/posts"; // Padrão (Global/Mural)
+      if (communityId) {
+        endpoint = `/communities/${communityId}/posts`; // Comunidade
+      }
+
+      const { data: newPost } = await api.post(endpoint, fd, {
         headers: { "Content-Type": "multipart/form-data" }
       });
 
       // Reset
-      setTitle("");
-      setText("");
-      setFile(null);
-      setLinkUrl("");
+      setTitle(""); setText(""); setFile(null); setLinkUrl("");
       setPollOptions([{ text: "" }, { text: "" }]);
-      setQuizQuestion("");
-      setQuizOptions(["", "", "", ""]);
+      setQuizQuestion(""); setQuizOptions(["", "", "", ""]);
 
       onCreated && onCreated(newPost);
     } catch (err) {
@@ -104,19 +99,13 @@ export default function CreatePost({ onCreated, targetUserId }) {
 
   return (
     <div className="bg-white shadow-sm rounded-lg p-4 mb-4 border border-gray-200">
-      {/* Se estamos no mural de alguém, mostramos um header diferente */}
-      {targetUserId && (
-        <div className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">
-          Escrever no Mural
-        </div>
-      )}
+      {targetUserId && <div className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">Escrever no Mural</div>}
+      {communityId && <div className="text-xs font-bold text-sky-500 uppercase tracking-wide mb-3">Novo Post na Comunidade</div>}
 
       <div className="flex gap-2 overflow-x-auto pb-3 mb-3 border-b border-gray-100 no-scrollbar">
         {TYPES.map(t => (
           <button
-            key={t.id}
-            type="button"
-            onClick={() => setType(t.id)}
+            key={t.id} type="button" onClick={() => setType(t.id)}
             className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${type === t.id ? 'bg-sky-100 text-sky-700 ring-1 ring-sky-200' : 'bg-gray-50 text-gray-600 hover:bg-gray-200'}`}
           >
             <span>{t.icon}</span> {t.label}
@@ -126,43 +115,20 @@ export default function CreatePost({ onCreated, targetUserId }) {
 
       <form onSubmit={submit} className="space-y-3">
         <div className="flex gap-2">
-          <input
-            className="flex-1 font-bold text-lg outline-none placeholder-gray-400 border-b border-transparent focus:border-sky-300 transition-colors bg-transparent"
-            placeholder={type === 'wiki' ? "Nome da Wiki" : "Título do post"}
-            value={title}
-            onChange={e => setTitle(e.target.value)}
-          />
-          {/* Categoria só faz sentido em posts públicos, mas deixaremos aqui por enquanto */}
-          <select
-            className="bg-gray-100 rounded-lg px-2 py-1 text-xs text-gray-700 outline-none border-none"
-            value={category}
-            onChange={e => setCategory(e.target.value)}
-          >
+          <input className="flex-1 font-bold text-lg outline-none placeholder-gray-400 border-b border-transparent focus:border-sky-300 transition-colors bg-transparent" placeholder={type === 'wiki' ? "Nome da Wiki" : "Título do post"} value={title} onChange={e => setTitle(e.target.value)} />
+          <select className="bg-gray-100 rounded-lg px-2 py-1 text-xs text-gray-700 outline-none border-none" value={category} onChange={e => setCategory(e.target.value)}>
             {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
           </select>
         </div>
 
         {(type === 'blog' || type === 'wiki') && (
-          <textarea
-            className="w-full bg-gray-50 p-3 rounded-lg outline-none min-h-[100px] text-sm border border-transparent focus:bg-white focus:border-sky-200 transition-colors"
-            placeholder={targetUserId ? "Deixe uma mensagem..." : (type === 'wiki' ? "Descreva o conteúdo..." : "Escreva seu blog aqui...")}
-            value={text}
-            onChange={e => setText(e.target.value)}
-          />
+          <textarea className="w-full bg-gray-50 p-3 rounded-lg outline-none min-h-[100px] text-sm border border-transparent focus:bg-white focus:border-sky-200 transition-colors" placeholder="Escreva aqui..." value={text} onChange={e => setText(e.target.value)} />
         )}
 
-        {type === 'link' && (
-          <input
-            className="w-full border p-2 rounded bg-gray-50 text-sm"
-            placeholder="Cole o link aqui (http://...)"
-            value={linkUrl}
-            onChange={e => setLinkUrl(e.target.value)}
-          />
-        )}
+        {type === 'link' && <input className="w-full border p-2 rounded bg-gray-50 text-sm" placeholder="Link (http://...)" value={linkUrl} onChange={e => setLinkUrl(e.target.value)} />}
 
         {type === 'poll' && (
           <div className="space-y-2 bg-gray-50 p-3 rounded-lg">
-            <p className="text-xs font-bold text-gray-500 uppercase">Opções</p>
             {pollOptions.map((opt, i) => (
               <input key={i} className="w-full border border-gray-200 p-2 rounded text-sm outline-none" placeholder={`Opção ${i + 1}`} value={opt.text} onChange={e => handlePollOptionChange(i, e.target.value)} />
             ))}
@@ -193,8 +159,7 @@ export default function CreatePost({ onCreated, targetUserId }) {
               </div>
             ) : (
               <button type="button" className="flex items-center gap-2 text-gray-500 hover:text-sky-600 transition text-sm mt-2" onClick={() => fileInputRef.current.click()}>
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                Mídia
+                📷 Mídia
               </button>
             )}
             <input type="file" className="hidden" ref={fileInputRef} onChange={e => setFile(e.target.files[0])} accept={type === 'video' ? "video/*" : "image/*,video/*"} />
@@ -203,7 +168,7 @@ export default function CreatePost({ onCreated, targetUserId }) {
 
         <div className="flex justify-end pt-2 border-t border-gray-100 mt-2">
           <button type="submit" disabled={loading} className="bg-sky-500 text-white px-6 py-2 rounded-full font-bold hover:bg-sky-600 disabled:opacity-50 transition shadow-sm text-sm">
-            {loading ? "Enviando..." : (targetUserId ? "Postar no Mural" : "Publicar")}
+            {loading ? "Enviando..." : "Publicar"}
           </button>
         </div>
       </form>
