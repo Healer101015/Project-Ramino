@@ -33,7 +33,7 @@ const requireLeader = async (req, res, next) => {
 
 // --- ROTAS GERAIS ---
 
-// Listar todas as comunidades (CORREÇÃO AQUI: Adicionado coverUrl e appearance)
+// Listar todas as comunidades
 router.get("/", authRequired, async (req, res) => {
     try {
         const communities = await Community.find()
@@ -56,7 +56,9 @@ router.post("/", authRequired, upload.fields([{ name: 'avatar', maxCount: 1 }, {
             owner: req.userId,
             members: [...new Set([req.userId, ...admins])],
             avatarUrl: req.files?.avatar?.[0]?.fileUrl || "",
-            coverUrl: req.files?.cover?.[0]?.fileUrl || ""
+            coverUrl: req.files?.cover?.[0]?.fileUrl || "",
+            // Layout padrão inicial da Home
+            homeLayout: [{ type: 'rich_text', title: 'Bem-vindo!', content: 'Obrigado por entrar na comunidade.', order: 0 }]
         });
 
         await CommunityMember.create({ community: community._id, user: req.userId, role: 'leader', xp: 500, level: 5, titles: ['Criador'] });
@@ -80,7 +82,7 @@ router.get("/:id", authRequired, async (req, res) => {
         const channels = await Channel.find({
             community: community._id,
             $or: [{ isPrivate: false }, { isPrivate: true, allowedUsers: req.userId }]
-        });
+        }).sort({ type: 1, createdAt: 1 });
 
         const myMember = await CommunityMember.findOne({ community: community._id, user: req.userId });
 
@@ -93,24 +95,32 @@ router.get("/:id", authRequired, async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Editar Comunidade (Aparência e Configs)
+// Editar Comunidade (Aparência, Configs e Layout)
 router.put("/:id", authRequired, requireLeader, upload.fields([{ name: 'background', maxCount: 1 }]), handleUpload, async (req, res) => {
     try {
-        const { name, description, rules, primaryColor, categories, allowMemberCreatedChats } = req.body;
+        const { name, description, rules, primaryColor, categories, allowMemberCreatedChats, homeLayout } = req.body;
 
         const updates = {};
         if (name) updates.name = name;
         if (description) updates.description = description;
         if (rules) updates.rules = rules;
 
+        // Aparência (V5.0)
         if (primaryColor) updates["appearance.primaryColor"] = primaryColor;
         if (req.files?.background?.[0]?.fileUrl) updates["appearance.backgroundImage"] = req.files.background[0].fileUrl;
 
         if (categories) {
             try { updates.categories = JSON.parse(categories); } catch (e) { }
         }
+
+        // Configurações de Chat (V8.0)
         if (allowMemberCreatedChats !== undefined) {
             updates["chatSettings.allowMemberCreatedChats"] = allowMemberCreatedChats === 'true';
+        }
+
+        // Layout da Home (V11.0)
+        if (homeLayout) {
+            try { updates.homeLayout = JSON.parse(homeLayout); } catch (e) { }
         }
 
         const updated = await Community.findByIdAndUpdate(req.params.id, { $set: updates }, { new: true });
@@ -118,7 +128,6 @@ router.put("/:id", authRequired, requireLeader, upload.fields([{ name: 'backgrou
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ... (Resto das rotas de Join, Posts, Moderação, Canais mantidas iguais)
 // Entrar
 router.post("/:id/join", authRequired, async (req, res) => {
     try {
@@ -137,9 +146,13 @@ router.post("/:id/join", authRequired, async (req, res) => {
 // Posts
 router.get("/:id/posts", authRequired, async (req, res) => {
     try {
-        const { category } = req.query;
+        const { category, featured } = req.query;
         const filter = { community: req.params.id };
         if (category && category !== 'Todas') filter.category = category;
+
+        // Filtro para widget de destaques da Home
+        if (featured === 'true') filter["featured.isFeatured"] = true;
+
         const posts = await Post.find(filter).populate("user", "name avatarUrl _id").populate("comments.user", "name avatarUrl _id").populate("reactions.user", "name avatarUrl _id").sort({ "featured.isFeatured": -1, isPinned: -1, createdAt: -1 }).limit(50);
         res.json(posts);
     } catch (e) { res.status(500).json({ error: e.message }); }
@@ -168,7 +181,7 @@ router.post("/:id/posts", authRequired, upload.single("media"), handleUpload, as
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Admin/Mod
+// Admin/Mod Actions
 router.post("/:id/posts/:postId/feature", authRequired, requireMod, async (req, res) => {
     const p = await Post.findById(req.params.postId);
     p.featured = { isFeatured: !p.featured.isFeatured, priority: 2, featuredAt: new Date() };
@@ -184,13 +197,34 @@ router.get("/:id/members_list", authRequired, async (req, res) => { const m = aw
 router.post("/:id/role", authRequired, requireLeader, async (req, res) => { await CommunityMember.findOneAndUpdate({ community: req.params.id, user: req.body.targetUserId }, { role: req.body.role }); res.json({ ok: true }); });
 router.post("/:id/ban", authRequired, requireLeader, async (req, res) => { /* logica ban... */ res.json({ ok: true }); });
 
-// Channels
+// Channels (V8.0 - Tipos e Permissões)
 router.post("/:id/channels", authRequired, async (req, res) => {
     const { name, isPrivate, type } = req.body;
+
+    const community = await Community.findById(req.params.id);
+    const member = await CommunityMember.findOne({ community: community._id, user: req.userId });
+
+    const isLeader = member?.role === 'leader';
+    const canCreate = isLeader || community.chatSettings.allowMemberCreatedChats;
+
+    if (!canCreate) return res.status(403).json({ error: "Criação de chats desativada para membros." });
     if (!name) return res.status(400).json({ error: "Nome obrigatório" });
-    const ch = await Channel.create({ community: req.params.id, name, isPrivate: !!isPrivate, type: type || 'general', allowedUsers: [req.userId] });
+
+    let channelType = 'general';
+    if (isLeader && (type === 'official' || type === 'event')) {
+        channelType = type;
+    }
+
+    const ch = await Channel.create({
+        community: req.params.id,
+        name,
+        isPrivate: !!isPrivate,
+        type: channelType,
+        allowedUsers: [req.userId]
+    });
     res.json(ch);
 });
+
 router.get("/channels/:channelId/messages", authRequired, async (req, res) => {
     const m = await Message.find({ channel: req.params.channelId }).populate("sender", "name avatarUrl").sort({ createdAt: 1 });
     res.json(m);

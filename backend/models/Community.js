@@ -1,5 +1,14 @@
 import mongoose from "mongoose";
 
+const LayoutBlockSchema = new mongoose.Schema({
+    type: { type: String, enum: ['banner', 'featured_posts', 'rich_text'], required: true },
+    title: { type: String, default: "" },
+    content: { type: String, default: "" }, // Texto para rich_text
+    imageUrl: { type: String, default: "" }, // Para banners
+    linkUrl: { type: String, default: "" }, // Link do banner
+    order: { type: Number, default: 0 }
+}, { _id: false });
+
 const CommunitySchema = new mongoose.Schema({
     name: { type: String, required: true },
     description: { type: String, default: "" },
@@ -13,18 +22,20 @@ const CommunitySchema = new mongoose.Schema({
 
     // V5.0 - Personalização Visual
     appearance: {
-        primaryColor: { type: String, default: "#0ea5e9" }, // Cor principal (botões, links)
-        headerImage: { type: String, default: "" }, // Header personalizado
+        primaryColor: { type: String, default: "#0ea5e9" }, // Cor principal (Hex)
         backgroundImage: { type: String, default: "" }, // Fundo da página
-        icon: { type: String, default: "" } // Ícone principal (pode ser diferente do avatar)
+        theme: { type: String, enum: ['light', 'dark'], default: 'light' }
     },
+
+    // V11.0 - Página Inicial Customizável
+    homeLayout: [LayoutBlockSchema],
 
     // V5.0 - Ordem do Menu
     sidebarModules: { type: [String], default: ['about', 'channels', 'categories', 'members'] },
 
     // V2.0 & V6.0 - Regras e Categorias
     rules: { type: String, default: "" },
-    categories: [{ type: String }], // Ex: ["Fanart", "Teorias", "Notícias"]
+    categories: [{ type: String }],
 
     // V8.0 - Configurações de Chat
     chatSettings: {

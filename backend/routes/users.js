@@ -15,12 +15,11 @@ router.get("/me", authRequired, async (req, res) => {
 });
 
 // Update Profile (Com suporte a Galeria e Temas)
-// Agora aceita 'gallery' (múltiplos) e 'pageBackground'
 router.post("/me", authRequired, upload.fields([
   { name: 'avatar', maxCount: 1 },
   { name: 'coverPhoto', maxCount: 1 },
   { name: 'pageBackground', maxCount: 1 },
-  { name: 'gallery', maxCount: 5 } // Adicionar até 5 fotos por vez na galeria
+  { name: 'gallery', maxCount: 5 }
 ]), handleUpload, async (req, res) => {
   try {
     const updates = {
@@ -32,15 +31,13 @@ router.post("/me", authRequired, upload.fields([
     if (req.files?.coverPhoto?.[0]?.fileUrl) updates.coverPhotoUrl = req.files.coverPhoto[0].fileUrl;
     if (req.files?.pageBackground?.[0]?.fileUrl) updates.pageBackgroundUrl = req.files.pageBackground[0].fileUrl;
 
-    // Lógica para adicionar imagens à galeria (sem substituir as antigas, a menos que queira)
-    // Aqui vamos fazer push se houver novas
+    // Adicionar imagens à galeria
     if (req.files?.gallery) {
       const newImages = req.files.gallery.map(f => f.fileUrl);
-      // Push no array existente
       await User.findByIdAndUpdate(req.userId, { $push: { gallery: { $each: newImages } } });
     }
 
-    // Remover imagens da galeria se solicitado (array de urls)
+    // Remover imagens da galeria
     if (req.body.removeGalleryImages) {
       const imagesToRemove = JSON.parse(req.body.removeGalleryImages);
       if (Array.isArray(imagesToRemove)) {
@@ -56,8 +53,6 @@ router.post("/me", authRequired, upload.fields([
   }
 });
 
-// ... (Search, Follow, Unfollow - Mantidos iguais, omitidos por brevidade se não mudaram) ...
-// (Mantenha as rotas follow/unfollow/search do código anterior aqui)
 // SEARCH
 router.get("/search", authRequired, async (req, res) => {
   const q = req.query.q || "";
@@ -105,7 +100,6 @@ router.get("/:id/following", authRequired, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-
 // GET PROFILE (Com Mural e Galeria)
 router.get("/:id", authRequired, async (req, res) => {
   if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(404).json({ error: "Usuário inválido" });
@@ -122,7 +116,8 @@ router.get("/:id", authRequired, async (req, res) => {
   const canChat = me.following.includes(user._id) && me.followers.includes(user._id);
 
   // Buscar Posts do Usuário (Feed Pessoal)
-  const posts = await Post.find({ user: user._id, postedTo: null }) // Apenas posts que ele fez no próprio feed
+  // CORREÇÃO: community: null garante que posts de comunidade não apareçam aqui
+  const posts = await Post.find({ user: user._id, postedTo: null, community: null })
     .populate("user", "name avatarUrl _id")
     .populate("comments.user", "name avatarUrl _id")
     .populate("reactions.user", "name avatarUrl _id")
@@ -139,7 +134,7 @@ router.get("/:id", authRequired, async (req, res) => {
   res.json({
     user,
     posts,
-    wallPosts, // Novo
+    wallPosts,
     followStatus,
     canChat,
     followersCount: user.followers.length,
