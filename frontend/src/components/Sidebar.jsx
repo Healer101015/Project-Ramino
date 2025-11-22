@@ -2,6 +2,14 @@ import { useEffect, useState, useCallback } from "react";
 import { api } from "../api";
 import { Link } from "react-router-dom";
 
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+
+const getAvatarUrl = (user) => {
+  if (!user?.avatarUrl) return null;
+  if (user.avatarUrl.startsWith('http')) return user.avatarUrl;
+  return `${API_URL}${user.avatarUrl}`;
+};
+
 // Componente para o avatar genérico
 const GenericAvatar = ({ user, className }) => {
   const getInitials = (name) => {
@@ -97,9 +105,7 @@ const SuggestionItem = ({ user, onAddFriend }) => {
     }
   };
 
-  let avatarUrl = user.avatarUrl ? `${user.avatarUrl}` : null;
-
-  if (avatarUrl && avatarUrl.includes("/uploads/")) avatarUrl = null;
+  const avatarUrl = getAvatarUrl(user);
 
   return (
     <li className="flex justify-between items-center transition-opacity duration-300">

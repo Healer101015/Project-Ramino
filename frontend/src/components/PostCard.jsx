@@ -6,6 +6,14 @@ import { ptBR } from "date-fns/locale";
 import { useAuth } from "../context/AuthContext";
 import { Link } from "react-router-dom";
 
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+
+const getAvatarUrl = (user) => {
+  if (!user?.avatarUrl) return null;
+  if (user.avatarUrl.startsWith('http')) return user.avatarUrl;
+  return `${API_URL}${user.avatarUrl}`;
+};
+
 const GenericAvatar = ({ user, className }) => {
   const getInitials = (name) => {
     if (!name) return "?";
@@ -81,8 +89,6 @@ const PostCard = ({ post: initialPost, onDelete, onChanged }) => {
   const [showReactionPicker, setShowReactionPicker] = useState(false);
   const actionsRef = useRef(null);
 
-  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
-
   useEffect(() => {
     setPost(initialPost);
   }, [initialPost]);
@@ -151,17 +157,19 @@ const PostCard = ({ post: initialPost, onDelete, onChanged }) => {
       );
     }
 
+    const avatarUrl = getAvatarUrl(p.user);
+
     return (
-        <>
+      <>
         <div className="p-4">
           <div className="flex items-center justify-between gap-2 mb-4">
             <Link to={`/profile/${p.user._id}`} className="flex items-center gap-3">
-              {p.user.avatarUrl && !p.user.avatarUrl.includes("/uploads/") ? (
-                <img src={p.user.avatarUrl} className="w-9 h-9 rounded-full object-cover group-hover:opacity-80" />
+              {avatarUrl ? (
+                <img src={avatarUrl} className="w-9 h-9 rounded-full object-cover group-hover:opacity-80" />
               ) : (
                 <GenericAvatar user={p.user} className="w-9 h-9 text-sm group-hover:opacity-80" />
               )
-            }
+              }
               <div>
                 <div className="font-semibold text-gray-800 hover:underline">{p.user.name}</div>
                 <div className="text-xs text-gray-500">{formatDistanceToNow(new Date(p.createdAt), { addSuffix: true, locale: ptBR })} {p.isEdited && "(editado)"}</div>
@@ -204,7 +212,7 @@ const PostCard = ({ post: initialPost, onDelete, onChanged }) => {
       </>
     )
   }
-  
+
   // Se for uma partilha, renderiza de forma diferente
   if (post.repostOf) {
     return (

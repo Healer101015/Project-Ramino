@@ -21,8 +21,15 @@ const AddFriendIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h
 
 // --- Helpers ---
 const getApiBase = () => import.meta.env.VITE_API_URL || "http://localhost:4000";
+
+const getFullUrl = (path) => {
+  if (!path) return "";
+  if (path.startsWith('http')) return path;
+  return `${getApiBase()}${path}`;
+};
+
 const getImageUrl = (path, name = "user") => {
-  if (path) return `${path}`;
+  if (path) return getFullUrl(path);
   const encodedName = encodeURIComponent(name);
   return `https://ui-avatars.com/api/?name=${encodedName}&background=random&color=fff&size=256`;
 };
@@ -86,16 +93,18 @@ const ProfileSkeleton = () => (
 const ProfileHeader = ({ user }) => (
   <div className="card rounded-lg overflow-hidden shadow-md">
     <div className="h-48 md:h-64 bg-gray-200">
-      <img
-        src={!user.coverPhotoUrl.includes('/uploads/') && user.coverPhotoUrl != "" ? user.coverPhotoUrl : getImageUrl(null, user.name)}
-        alt={`Foto de capa de ${user.name}`}
-        className="w-full h-full object-cover"
-      />
+      {user.coverPhotoUrl && (
+        <img
+          src={getImageUrl(user.coverPhotoUrl, user.name)}
+          alt={`Foto de capa de ${user.name}`}
+          className="w-full h-full object-cover"
+        />
+      )}
     </div>
     <div className="relative p-6">
       <div className="absolute -top-16 sm:-top-20 left-6">
         <img
-          src={!user.avatarUrl.includes('/uploads/') && user.avatarUrl != "" ? user.avatarUrl : getImageUrl(null, user.name)}
+          src={getImageUrl(user.avatarUrl, user.name)}
           alt={`Avatar de ${user.name}`}
           className="w-32 h-32 sm:w-40 sm:h-40 rounded-full object-cover border-4 border-white shadow-lg"
         />

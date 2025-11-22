@@ -12,7 +12,7 @@ import multer from "multer";
 import fs from "fs";
 
 import Message from "./models/Message.js";
-import Notification from "./models/Notification.js"; // Importar o modelo
+import Notification from "./models/Notification.js";
 
 import authRoutes from "./routes/auth.js";
 import postRoutes from "./routes/posts.js";
@@ -60,7 +60,7 @@ if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
-// Configuração do Multer para upload de arquivos
+// Configuração do Multer
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadsDir),
   filename: (req, file, cb) => {
@@ -81,7 +81,7 @@ const fileFilter = (req, file, cb) => {
 
 const upload = multer({
   storage,
-  limits: { fileSize: 10 * 10 * 1024 * 1024 }, // 10MB
+  limits: { fileSize: 10 * 10 * 1024 * 1024 }, // 100MB (nota: 10*10*1024*1024 é 100MB, ajuste conforme necessidade)
   fileFilter
 });
 
@@ -101,7 +101,7 @@ app.use("/api/users", userRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/messages", messagesRoutes);
 
-// Lista de usuários ativos
+// Lista de usuários ativos (para status online, se necessário)
 const activeUsers = new Map();
 
 // Middleware JWT para Socket.IO
@@ -113,7 +113,7 @@ const authenticateToken = (socket, next) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET || "dev_secret");
     socket.userId = decoded.id;
     next();
-  } catch {
+  } catch (err) {
     next(new Error("Authentication error: Invalid token"));
   }
 };
@@ -123,7 +123,10 @@ io.use(authenticateToken);
 // Eventos Socket.IO
 io.on("connection", (socket) => {
   console.log(`[Socket.io] Conexão: Socket ID=${socket.id}, User ID=${socket.userId}`);
+
   activeUsers.set(socket.userId, socket.id);
+
+  // Entrar na sala exclusiva do usuário para receber mensagens em qualquer aba/dispositivo
   socket.join(`user_${socket.userId}`);
 
   // Envio de mensagem
@@ -153,18 +156,21 @@ io.on("connection", (socket) => {
       const messageData = newMessage.toObject();
       if (tempId) messageData.tempId = tempId;
 
-      const recipientSocketId = activeUsers.get(recipientId);
-      if (recipientSocketId) {
-        io.to(recipientSocketId).emit("receiveMessage", messageData);
-        // Criar e emitir notificação de nova mensagem
-        const notification = await Notification.create({
-          recipient: recipientId,
-          sender: socket.userId,
-          type: 'NEW_MESSAGE'
-        });
-        await notification.populate('sender', 'name avatarUrl');
-        io.to(recipientSocketId).emit("new_notification", notification);
-      }
+      // Enviar para a SALA do destinatário (todos os dispositivos dele)
+      io.to(`user_${recipientId}`).emit("receiveMessage", messageData);
+
+      // Opcional: Enviar também para a sala do remetente (para sincronizar outras abas do remetente)
+      // io.to(`user_${socket.userId}`).emit("receiveMessage", messageData);
+
+      // Criar e emitir notificação
+      const notification = await Notification.create({
+        recipient: recipientId,
+        sender: socket.userId,
+        type: 'NEW_MESSAGE'
+      });
+      await notification.populate('sender', 'name avatarUrl');
+
+      io.to(`user_${recipientId}`).emit("new_notification", notification);
 
       socket.emit("messageSent", messageData);
     } catch (error) {
@@ -176,18 +182,19 @@ io.on("connection", (socket) => {
   // Evento typing
   socket.on('typing', (data) => {
     const { recipientId, isTyping } = data;
-    const recipientSocketId = activeUsers.get(recipientId);
-    if (recipientSocketId) {
-      io.to(recipientSocketId).emit(isTyping ? 'userTyping' : 'userStopTyping', {
-        userId: socket.userId,
-        isTyping: isTyping || undefined
-      });
-    }
+    // Enviar para a sala do destinatário
+    io.to(`user_${recipientId}`).emit(isTyping ? 'userTyping' : 'userStopTyping', {
+      userId: socket.userId,
+      isTyping: isTyping || undefined
+    });
   });
 
   // Desconexão
   socket.on("disconnect", (reason) => {
-    if (socket.userId) activeUsers.delete(socket.userId);
+    // Apenas remove do map se for o socket atual (embora map não suporte array de sockets por padrão aqui)
+    if (activeUsers.get(socket.userId) === socket.id) {
+      activeUsers.delete(socket.userId);
+    }
   });
 
   // Ping
@@ -200,24 +207,18 @@ const handleUpload = async (req, res) => {
 
     let attachmentType;
 
-    switch (true) {
-      case req.file.mimetype.startsWith('image/'):
-        attachmentType = 'image';
-        break;
-      case req.file.mimetype.startsWith('audio/'):
-        attachmentType = 'audio';
-        break;
-      case req.file.mimetype.startsWith('video/'):
-        attachmentType = 'video';
-        break;
-      default:
-        fs.unlinkSync(req.file.path);
-        return res.status(400).json({ error: "Tipo de arquivo não suportado" });
+    if (req.file.mimetype.startsWith('image/')) attachmentType = 'image';
+    else if (req.file.mimetype.startsWith('audio/')) attachmentType = 'audio';
+    else if (req.file.mimetype.startsWith('video/')) attachmentType = 'video';
+    else {
+      try { fs.unlinkSync(req.file.path); } catch (e) { }
+      return res.status(400).json({ error: "Tipo de arquivo não suportado" });
     }
 
     const fileBuffer = fs.readFileSync(req.file.path);
     const imageBase64 = fileBuffer.toString('base64');
-    
+
+    // Se for muito grande para o serviço externo, usar fallback ou erro (aqui mantendo sua lógica de fallback URL)
     if (req.file.size > 10 * 1024 * 1024) {
       res.json({
         fileUrl: "https://cdn.discordapp.com/attachments/1411263605415874590/1411270271423217735/image.png?ex=68b40b5c&is=68b2b9dc&hm=bc2bb17168470e6e96af9f498752c978266995171bb4f1e38a1787c9a483437d&",
@@ -226,25 +227,24 @@ const handleUpload = async (req, res) => {
         fileName: req.file.originalname,
         fileSize: req.file.size
       });
-      fs.unlinkSync(req.file.path);    
+      try { fs.unlinkSync(req.file.path); } catch (e) { }
       return;
     }
 
     const fetchResponse = await fetch(process.env.IMAGE_UPLOAD_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ imageBase64 })
+      body: JSON.stringify({ imageBase64, contentType: req.file.mimetype })
     });
 
     if (!fetchResponse.ok) {
-      fs.unlinkSync(req.file.path);
+      try { fs.unlinkSync(req.file.path); } catch (e) { }
       return res.status(500).json({ error: "Falha ao enviar para o serviço externo" });
     }
 
-
     const responseData = await fetchResponse.json();
 
-    fs.unlinkSync(req.file.path);
+    try { fs.unlinkSync(req.file.path); } catch (e) { }
 
     res.json({
       fileUrl: responseData.url,
@@ -262,19 +262,17 @@ const handleUpload = async (req, res) => {
 app.post("/api/upload-media", upload.single('media'), handleUpload);
 app.post("/upload-media", upload.single('media'), handleUpload);
 
-// Middleware de erro Multer
 app.use((error, req, res, next) => {
   if (error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE') {
-    return res.status(400).json({ error: "Arquivo muito grande. Máx 10MB." });
+    return res.status(400).json({ error: "Arquivo muito grande. Máx 100MB." });
   }
   res.status(400).json({ error: error.message });
 });
 
-// Health check
 app.get("/health", (_req, res) => {
   res.json({
     status: "ok",
-    activeUsers: Array.from(activeUsers.entries()).map(([id, socketId]) => ({ userId: id, socketId })),
+    activeUsersCount: activeUsers.size,
     timestamp: new Date().toISOString()
   });
 });
@@ -286,7 +284,6 @@ app.get("/", (_req, res) => res.json({
   socketIo: true
 }));
 
-// Conexão MongoDB e start do servidor
 mongoose.connect(MONGO_URI).then(() => {
   console.log("MongoDB conectado");
   server.listen(PORT, () => console.log(`Servidor rodando em http://localhost:${PORT}`));

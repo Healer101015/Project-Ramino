@@ -1,12 +1,12 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useState, useEffect, useRef } from "react";
-import io from 'socket.io-client';
 import { api } from "../api";
 import { useAuth } from "../context/AuthContext";
+import { useChat } from "../context/ChatContext"; // Usar socket do contexto
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
-// --- Ícones ---
+// --- Ícones (Mantidos) ---
 const SearchIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>;
 const LogoutIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>;
 const ProfileIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>;
@@ -16,13 +16,11 @@ const BellIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
-// --- Componente de Avatar Genérico ---
 const GenericAvatar = ({ user, className }) => {
   const getInitials = (name) => !name ? "?" : name.trim().split(" ").filter(Boolean).map(p => p[0]).join('').toUpperCase().slice(0, 2);
   return <div className={`flex items-center justify-center rounded-full bg-sky-500 text-white font-bold ${className}`}><span>{getInitials(user?.name)}</span></div>;
 };
 
-// ... (Hook useDebounce e Componente SearchBar permanecem os mesmos) ...
 const useDebounce = (value, delay) => {
   const [debouncedValue, setDebouncedValue] = useState(value);
   useEffect(() => {
@@ -101,12 +99,11 @@ const SearchBar = () => {
   );
 };
 
-
-// --- NOVO: Componente de Notificações ---
 const NotificationBell = () => {
   const [notifications, setNotifications] = useState([]);
   const [isOpen, setIsOpen] = useState(false);
   const bellRef = useRef(null);
+  const { socket } = useChat(); // Usar socket do contexto
 
   const unreadCount = notifications.filter(n => !n.read).length;
 
@@ -121,23 +118,15 @@ const NotificationBell = () => {
 
   useEffect(() => {
     fetchNotifications();
-    const interval = setInterval(fetchNotifications, 60000); // Atualiza a cada minuto
 
-    const token = localStorage.getItem('token');
-    if (token) {
-      const socket = io(API_URL, { auth: { token } });
-      socket.on('new_notification', (newNotification) => {
+    if (socket) {
+      const handleNewNotif = (newNotification) => {
         setNotifications(prev => [newNotification, ...prev]);
-      });
-
-      return () => {
-        clearInterval(interval);
-        socket.disconnect();
       };
+      socket.on('new_notification', handleNewNotif);
+      return () => socket.off('new_notification', handleNewNotif);
     }
-
-    return () => clearInterval(interval);
-  }, []);
+  }, [socket]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -151,7 +140,8 @@ const NotificationBell = () => {
     setIsOpen(!isOpen);
     if (!isOpen && unreadCount > 0) {
       await api.post('/notifications/read');
-      fetchNotifications(); // Re-busca para atualizar o status 'read'
+      // Atualiza localmente para evitar refetch
+      setNotifications(prev => prev.map(n => ({ ...n, read: true })));
     }
   };
 
@@ -204,8 +194,6 @@ const NotificationBell = () => {
   );
 };
 
-
-// ... (Componente ProfileDropdown permanece o mesmo) ...
 const ProfileDropdown = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -226,7 +214,6 @@ const ProfileDropdown = () => {
   };
 
   let avatarUrl = user.avatarUrl ? `${user.avatarUrl}` : null;
-
   if (avatarUrl && avatarUrl.includes("/uploads/")) avatarUrl = null
 
   return (
@@ -250,8 +237,6 @@ const ProfileDropdown = () => {
   );
 };
 
-
-// --- Navbar Principal ---
 export default function Navbar() {
   const { user, loading } = useAuth();
   const [isMobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -268,12 +253,11 @@ export default function Navbar() {
       <div className="container-healer flex items-center justify-between py-3 px-4">
         <Link to="/" className="font-bold text-2xl text-sky-600 tracking-tight" aria-label="Healer - Página inicial">Healer</Link>
 
-        {/* --- Menu Desktop --- */}
         <div className="hidden md:flex gap-4 items-center">
           {loading ? <SkeletonLoader /> : user ? (
             <>
               <SearchBar />
-              <NotificationBell /> {/* Adicionar o sino de notificação */}
+              <NotificationBell />
               <ProfileDropdown />
             </>
           ) : (
@@ -281,7 +265,6 @@ export default function Navbar() {
           )}
         </div>
 
-        {/* ... (Menu Mobile permanece o mesmo) ... */}
         <div className="md:hidden">
           <button onClick={() => setMobileMenuOpen(!isMobileMenuOpen)} aria-controls="mobile-menu" aria-expanded={isMobileMenuOpen}>
             {isMobileMenuOpen ? <CloseIcon /> : <MenuIcon />}
