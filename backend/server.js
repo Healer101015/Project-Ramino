@@ -15,7 +15,11 @@ import fs from "fs";
 import Message from "./models/Message.js";
 import Notification from "./models/Notification.js";
 import User from "./models/User.js";
-import Channel from "./models/Channel.js"; // NOVO: Importar modelo de Canal
+import Channel from "./models/Channel.js";
+import CommunityMember from "./models/CommunityMember.js"; // Necessário para lógica de XP se precisar acessar direto
+
+// --- Utilitários ---
+import { addXP } from "./utils/xp.js"; // Importar função de adicionar XP
 
 // --- Rotas ---
 import authRoutes from "./routes/auth.js";
@@ -23,7 +27,7 @@ import postRoutes from "./routes/posts.js";
 import userRoutes from "./routes/users.js";
 import notificationRoutes from "./routes/notifications.js";
 import messagesRoutes from "./routes/messages.js";
-import communityRoutes from "./routes/communities.js"; // NOVO: Importar rotas de comunidade
+import communityRoutes from "./routes/communities.js";
 
 dotenv.config();
 
@@ -106,12 +110,11 @@ app.use("/api/posts", postRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/messages", messagesRoutes);
-app.use("/api/communities", communityRoutes); // Nova rota registrada
+app.use("/api/communities", communityRoutes);
 
 // --- Socket.IO ---
 const activeUsers = new Map();
 
-// Middleware de Autenticação do Socket
 const authenticateToken = (socket, next) => {
   const token = socket.handshake.auth.token || socket.handshake.query.token;
   if (!token) return next(new Error("Authentication error: Token not provided"));
@@ -131,7 +134,7 @@ io.on("connection", (socket) => {
   console.log(`[Socket.io] Conexão: Socket ID=${socket.id}, User ID=${socket.userId}`);
   activeUsers.set(socket.userId, socket.id);
 
-  // Sala pessoal para notificações e DMs
+  // Sala pessoal
   socket.join(`user_${socket.userId}`);
 
   // Eventos de Canais de Comunidade
@@ -144,7 +147,7 @@ io.on("connection", (socket) => {
     socket.leave(`channel_${channelId}`);
   });
 
-  // Envio de Mensagem (Unificado: DM ou Canal)
+  // Envio de Mensagem (Unificado)
   socket.on("sendMessage", async (data) => {
     const { recipientId, channelId, content, attachment, attachmentType, mimeType, fileName, fileSize, tempId } = data;
 
@@ -162,11 +165,17 @@ io.on("connection", (socket) => {
           return;
         }
 
-        // Validação de Canal Privado
         if (channel.isPrivate && !channel.allowedUsers.includes(socket.userId)) {
-          socket.emit("messageError", { error: "Você não tem permissão para enviar mensagens neste canal.", tempId });
+          socket.emit("messageError", { error: "Sem permissão neste canal.", tempId });
           return;
         }
+
+        // --- SISTEMA DE XP (Versão 8.0) ---
+        // Adiciona XP ao enviar mensagem. Texto = 10 XP, Mídia = 20 XP.
+        const xpAmount = attachment ? 20 : 10;
+        // Não usamos await para não bloquear o envio da mensagem (background task)
+        addXP(socket.userId, channel.community, xpAmount);
+        // ----------------------------------
 
         const newMessage = await Message.create({
           sender: socket.userId,
@@ -180,15 +189,12 @@ io.on("connection", (socket) => {
         const messageData = newMessage.toObject();
         if (tempId) messageData.tempId = tempId;
 
-        // Enviar para todos na sala do canal
         io.to(`channel_${channelId}`).emit("receiveMessage", messageData);
-
-        // Confirmar envio para o remetente
         socket.emit("messageSent", messageData);
         return;
       }
 
-      // CASO 2: Mensagem Direta (DM)
+      // CASO 2: Mensagem Direta (DM) - Sem XP
       if (recipientId) {
         const sender = await User.findById(socket.userId);
         const recipient = await User.findById(recipientId);
@@ -198,12 +204,12 @@ io.on("connection", (socket) => {
           return;
         }
 
-        // Verificação de Seguidores Mútuos
+        // Check seguidores mútuos
         const iFollowThem = sender.following.includes(recipientId);
         const theyFollowMe = recipient.following.includes(socket.userId);
 
         if (!iFollowThem || !theyFollowMe) {
-          socket.emit("messageError", { error: "Vocês precisam seguir um ao outro para conversar.", tempId });
+          socket.emit("messageError", { error: "Vocês precisam seguir um ao outro.", tempId });
           return;
         }
 
@@ -220,10 +226,8 @@ io.on("connection", (socket) => {
         const messageData = newMessage.toObject();
         if (tempId) messageData.tempId = tempId;
 
-        // Enviar para o destinatário e para o remetente (para sincronizar abas)
         io.to(`user_${recipientId}`).emit("receiveMessage", messageData);
 
-        // Notificação
         const notification = await Notification.create({
           recipient: recipientId,
           sender: socket.userId,
@@ -241,22 +245,16 @@ io.on("connection", (socket) => {
     }
   });
 
-  // Evento Typing (Digitando...)
+  // Typing
   socket.on('typing', (data) => {
     const { recipientId, channelId, isTyping } = data;
-
     if (channelId) {
-      // Digitando em um canal (broadcast para a sala, exceto o remetente)
       socket.to(`channel_${channelId}`).emit('userTyping', {
-        userId: socket.userId,
-        channelId,
-        isTyping
+        userId: socket.userId, channelId, isTyping
       });
     } else if (recipientId) {
-      // Digitando em DM
       io.to(`user_${recipientId}`).emit(isTyping ? 'userTyping' : 'userStopTyping', {
-        userId: socket.userId,
-        isTyping: isTyping || undefined
+        userId: socket.userId, isTyping
       });
     }
   });
@@ -296,11 +294,9 @@ const handleUpload = async (req, res) => {
   }
 };
 
-// Rotas de Upload
 app.post("/api/upload-media", upload.single('media'), handleUpload);
 app.post("/upload-media", upload.single('media'), handleUpload);
 
-// Error Handling do Multer
 app.use((error, req, res, next) => {
   if (error instanceof multer.MulterError) {
     if (error.code === 'LIMIT_FILE_SIZE') {
@@ -311,7 +307,6 @@ app.use((error, req, res, next) => {
   next();
 });
 
-// Health Check
 app.get("/health", (_req, res) => {
   res.json({
     status: "ok",
@@ -323,12 +318,10 @@ app.get("/health", (_req, res) => {
 app.get("/", (_req, res) => res.json({
   ok: true,
   name: "Healer API",
-  version: "1.2.0",
-  socketIo: true,
-  features: ["communities", "channels", "followers", "local-storage"]
+  version: "1.3.0",
+  features: ["communities", "channels", "followers", "xp-system"]
 }));
 
-// Inicialização
 mongoose.connect(MONGO_URI).then(() => {
   console.log("MongoDB conectado");
   server.listen(PORT, () => console.log(`Servidor rodando em http://localhost:${PORT}`));
