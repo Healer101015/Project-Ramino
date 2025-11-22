@@ -1,15 +1,11 @@
 import mongoose from "mongoose";
 
 const NotificationSchema = new mongoose.Schema({
-    // Para quem é a notificação
     recipient: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, index: true },
-    // Quem originou a notificação
     sender: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
-    // Tipo da notificação
-    type: { type: String, enum: ["FRIEND_REQUEST", "FRIEND_ACCEPT", "LIKE", "COMMENT", "NEW_MESSAGE"], required: true },
-    // ID do Post (para curtidas e comentários)
+    // Tipos atualizados para o novo sistema
+    type: { type: String, enum: ["FOLLOW", "LIKE", "COMMENT", "NEW_MESSAGE"], required: true },
     postId: { type: mongoose.Schema.Types.ObjectId, ref: "Post" },
-    // Status de leitura
     read: { type: Boolean, default: false, index: true },
 }, { timestamps: true });
 

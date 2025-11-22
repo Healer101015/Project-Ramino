@@ -2,11 +2,11 @@ import { Link, useNavigate } from "react-router-dom";
 import { useState, useEffect, useRef } from "react";
 import { api } from "../api";
 import { useAuth } from "../context/AuthContext";
-import { useChat } from "../context/ChatContext"; // Usar socket do contexto
+import { useChat } from "../context/ChatContext";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
-// --- Ícones (Mantidos) ---
+// --- Ícones ---
 const SearchIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>;
 const LogoutIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>;
 const ProfileIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>;
@@ -75,7 +75,9 @@ const SearchBar = () => {
           {results.length > 0 ? (
             <ul className="max-h-80 overflow-y-auto">
               {results.map(user => {
-                const avatarUrl = user.avatarUrl ? `${API_URL}${user.avatarUrl}` : null;
+                const avatarUrl = user.avatarUrl
+                  ? (user.avatarUrl.startsWith('http') ? user.avatarUrl : `${API_URL}${user.avatarUrl}`)
+                  : null;
                 return (
                   <li key={user._id}>
                     <Link to={`/profile/${user._id}`} onClick={() => setIsOpen(false)} className="flex items-center gap-3 p-3 hover:bg-gray-100 transition-colors">
@@ -103,7 +105,7 @@ const NotificationBell = () => {
   const [notifications, setNotifications] = useState([]);
   const [isOpen, setIsOpen] = useState(false);
   const bellRef = useRef(null);
-  const { socket } = useChat(); // Usar socket do contexto
+  const { socket } = useChat();
 
   const unreadCount = notifications.filter(n => !n.read).length;
 
@@ -140,7 +142,6 @@ const NotificationBell = () => {
     setIsOpen(!isOpen);
     if (!isOpen && unreadCount > 0) {
       await api.post('/notifications/read');
-      // Atualiza localmente para evitar refetch
       setNotifications(prev => prev.map(n => ({ ...n, read: true })));
     }
   };
@@ -173,7 +174,9 @@ const NotificationBell = () => {
           <div className="p-3 font-semibold border-b">Notificações</div>
           <ul className="max-h-96 overflow-y-auto">
             {notifications.length > 0 ? notifications.map(notif => {
-              const senderAvatar = notif.sender.avatarUrl ? `${API_URL}${notif.sender.avatarUrl}` : null;
+              const senderAvatar = notif.sender.avatarUrl
+                ? (notif.sender.avatarUrl.startsWith('http') ? notif.sender.avatarUrl : `${API_URL}${notif.sender.avatarUrl}`)
+                : null;
               return (
                 <li key={notif._id}>
                   <Link to={`/profile/${notif.sender._id}`} onClick={() => setIsOpen(false)}
@@ -213,21 +216,31 @@ const ProfileDropdown = () => {
     navigate("/login");
   };
 
-  let avatarUrl = user.avatarUrl ? `${user.avatarUrl}` : null;
-  if (avatarUrl && avatarUrl.includes("/uploads/")) avatarUrl = null
+  // Correção para avatar local
+  let avatarUrl = null;
+  if (user?.avatarUrl) {
+    avatarUrl = user.avatarUrl.startsWith('http')
+      ? user.avatarUrl
+      : `${API_URL}${user.avatarUrl}`;
+  }
+
+  // Correção de ID: Usa _id ou id (fallback)
+  const userId = user?._id || user?.id;
 
   return (
     <div className="relative" ref={dropdownRef}>
       <button onClick={() => setIsOpen(!isOpen)} className="flex items-center gap-2 focus:outline-none" aria-haspopup="true" aria-expanded={isOpen}>
         {avatarUrl ? <img src={avatarUrl} className="w-9 h-9 rounded-full object-cover" alt="Seu avatar" /> : <GenericAvatar user={user} className="w-9 h-9" />}
-        <span className="text-sm font-semibold hidden md:block">{user.name}</span>
+        <span className="text-sm font-semibold hidden md:block">{user?.name}</span>
       </button>
 
       {isOpen && (
         <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-xl z-20 border py-1">
-          <Link to={`/profile/${user._id}`} onClick={() => setIsOpen(false)} className="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
-            <ProfileIcon /> Meu Perfil
-          </Link>
+          {userId && (
+            <Link to={`/profile/${userId}`} onClick={() => setIsOpen(false)} className="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+              <ProfileIcon /> Meu Perfil
+            </Link>
+          )}
           <button onClick={handleLogout} className="w-full text-left flex items-center gap-3 px-4 py-2 text-sm text-red-600 hover:bg-red-50 font-medium">
             <LogoutIcon /> Sair
           </button>

@@ -1,5 +1,5 @@
 // frontend/src/context/ChatContext.jsx
-import React, { createContext, useState, useContext, useEffect } from 'react';
+import React, { createContext, useState, useContext, useEffect, useRef } from 'react';
 import io from 'socket.io-client';
 import { useAuth } from './AuthContext';
 
@@ -15,37 +15,57 @@ export const ChatProvider = ({ children }) => {
     const [isMobileChatOpen, setMobileChatOpen] = useState(false);
     const [socket, setSocket] = useState(null);
 
+    // Ref para rastrear conexão atual e evitar loops
+    const socketRef = useRef(null);
+
     useEffect(() => {
-        let newSocket = null;
         const token = localStorage.getItem('token');
 
+        // Só conecta se houver usuário, token e ainda não houver socket (ou se o usuário mudou)
         if (user && token) {
-            newSocket = io(API_URL, {
+            // Se já existe um socket conectado para este usuário, não faz nada
+            if (socketRef.current && socketRef.current.connected && socketRef.current.userId === user._id) {
+                return;
+            }
+
+            // Se existe um socket de outro usuário (troca de conta), desconecta
+            if (socketRef.current) {
+                socketRef.current.disconnect();
+            }
+
+            console.log('[ChatContext] Iniciando conexão Socket.io...');
+            const newSocket = io(API_URL, {
                 auth: { token },
                 transports: ['websocket', 'polling'],
                 reconnection: true,
-                reconnectionAttempts: Infinity,
-                timeout: 20000,
             });
 
+            // Armazena ID do usuário no objeto socket para verificação
+            newSocket.userId = user._id;
+
             newSocket.on('connect', () => {
-                console.log('[ChatContext] Socket conectado');
+                console.log('[ChatContext] Socket conectado:', newSocket.id);
             });
 
             newSocket.on('connect_error', (err) => {
                 console.error('[ChatContext] Erro de conexão:', err);
             });
 
+            socketRef.current = newSocket;
             setSocket(newSocket);
+        } else if (!user && socketRef.current) {
+            // Logout: desconecta
+            console.log('[ChatContext] Usuário deslogado, fechando socket.');
+            socketRef.current.disconnect();
+            socketRef.current = null;
+            setSocket(null);
         }
 
+        // Cleanup apenas no unmount da aplicação, não na mudança de user
         return () => {
-            if (newSocket) {
-                console.log('[ChatContext] Desconectando socket');
-                newSocket.disconnect();
-            }
+            // Opcional: Deixar a conexão viva enquanto o app estiver montado
         };
-    }, [user]);
+    }, [user?._id, user?.email]); // Dependência apenas de propriedades estáveis, não do objeto user inteiro
 
     const openChat = (targetUser) => {
         if (window.innerWidth < 768) {
@@ -69,7 +89,7 @@ export const ChatProvider = ({ children }) => {
         closeChat,
         isMobileChatOpen,
         setMobileChatOpen,
-        socket // Expondo o socket globalmente
+        socket
     };
 
     return (

@@ -28,7 +28,8 @@ router.post("/register", async (req, res) => {
     if (exists) return res.status(409).json({ error: "Email já cadastrado" });
     const hash = await bcrypt.hash(password, 10);
     const user = await User.create({ name, email, password: hash });
-    res.json({ token: sign(user._id), user: { id: user._id, name: user.name, email: user.email, avatarUrl: user.avatarUrl } });
+    // CORREÇÃO: Retornando _id para consistência
+    res.json({ token: sign(user._id), user: { _id: user._id, name: user.name, email: user.email, avatarUrl: user.avatarUrl } });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -39,7 +40,8 @@ router.post("/login", async (req, res) => {
     if (!user) return res.status(401).json({ error: "Credenciais inválidas" });
     const ok = await bcrypt.compare(password, user.password);
     if (!ok) return res.status(401).json({ error: "Credenciais inválidas" });
-    res.json({ token: sign(user._id), user: { id: user._id, name: user.name, email: user.email, avatarUrl: user.avatarUrl } });
+    // CORREÇÃO: Retornando _id para consistência
+    res.json({ token: sign(user._id), user: { _id: user._id, name: user.name, email: user.email, avatarUrl: user.avatarUrl } });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

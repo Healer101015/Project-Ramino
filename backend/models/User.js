@@ -5,11 +5,12 @@ const UserSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true },
   password: { type: String, required: true },
   avatarUrl: { type: String, default: "" },
-  coverPhotoUrl: { type: String, default: "" }, // NOVO: Foto de capa
+  coverPhotoUrl: { type: String, default: "" },
   bio: { type: String, default: "" },
-  friends: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
-  friendRequests: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
-  profileViews: { type: Number, default: 0 }, // NOVO: Contador de visualizações
+  // Mudança aqui: Sistema de seguidores
+  followers: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+  following: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+  profileViews: { type: Number, default: 0 },
 }, { timestamps: true });
 
 export default mongoose.model("User", UserSchema);

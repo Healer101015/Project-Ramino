@@ -1,83 +1,75 @@
 import multer from "multer";
-import dotenv from "dotenv";
+import path from "path";
+import fs from "fs";
 
-dotenv.config();
+// Garantir que o diretório de uploads existe
+const uploadsDir = path.join(process.cwd(), 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+}
 
-export const upload = multer({ 
-    storage: multer.memoryStorage(),
-    limits: { fileSize: 10 * 1024 * 1024 } 
+// Configuração do Storage (Disco Local)
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        cb(null, uploadsDir);
+    },
+    filename: (req, file, cb) => {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        // Preserva extensão original
+        cb(null, uniqueSuffix + '-' + file.originalname);
+    }
 });
 
-export const handleUpload = async (req, res, next) => {
-    // nada enviado
+export const upload = multer({
+    storage: storage,
+    limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
+    fileFilter: (req, file, cb) => {
+        // Aceitar imagens, vídeos e áudios
+        if (file.mimetype.startsWith('image/') ||
+            file.mimetype.startsWith('video/') ||
+            file.mimetype.startsWith('audio/')) {
+            cb(null, true);
+        } else {
+            cb(new Error('Tipo de arquivo não suportado.'), false);
+        }
+    }
+});
+
+// Middleware para processar o arquivo após o upload do Multer
+export const handleUpload = (req, res, next) => {
     if (!req.file && !req.files) return next();
 
-    const processFile = async (file) => {
-        let attachmentType;
+    // Função auxiliar para formatar o objeto do arquivo
+    const processFile = (file) => {
+        let attachmentType = 'file';
 
-        if (file.mimetype.startsWith("image/")) {
-            attachmentType = "image";
-        } else if (file.mimetype.startsWith("audio/")) {
-            attachmentType = "audio";
-        } else if (file.mimetype.startsWith("video/")) {
-            attachmentType = "video";
-        } else {
-            return {
-                ...file,
-                attachmentType: "unsupported",
-                fileUrl: "https://cdn.discordapp.com/attachments/1411263605415874590/1411518091908747395/image.png?ex=68b4f229&is=68b3a0a9&hm=b42ddf7296cffdf1ab23d179cf6e35ed30a43e1dadbd80518f7f87102e9ad2c5&"
-            };
-        }
+        if (file.mimetype.startsWith('image/')) attachmentType = 'image';
+        else if (file.mimetype.startsWith('video/')) attachmentType = 'video';
+        else if (file.mimetype.startsWith('audio/')) attachmentType = 'audio';
 
-        const fileBuffer = file.buffer;
-        const imageBase64 = fileBuffer.toString("base64");
-
-        try {
-            const fetchResponse = await fetch(process.env.IMAGE_UPLOAD_URL, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ imageBase64, contentType: file.mimetype })
-            });
-
-            if (!fetchResponse.ok) {
-                return {
-                    ...file,
-                    attachmentType,
-                    fileUrl: "https://cdn.discordapp.com/attachments/1411263605415874590/1411518439893241886/image.png?ex=68b4f27c&is=68b3a0fc&hm=a716a3b367eb3287ea319639d950b995b896f48266e69983bab79ad046fcb4a6&"
-                };
-            }
-
-            const responseData = await fetchResponse.json();
-
-            return {
-                ...file,
-                attachmentType,
-                fileUrl: responseData.url
-            };
-        } catch (err) {
-            console.error("Upload error:", err);
-            return {
-                ...file,
-                attachmentType,
-                fileUrl: "https://cdn.discordapp.com/attachments/1411263605415874590/1411518439893241886/image.png?ex=68b4f27c&is=68b3a0fc&hm=a716a3b367eb3287ea319639d950b995b896f48266e69983bab79ad046fcb4a6&"
-            };
-        }
+        return {
+            ...file,
+            attachmentType,
+            // Retorna o caminho relativo para ser salvo no banco
+            fileUrl: `/uploads/${file.filename}`
+        };
     };
 
+    // Processar único arquivo
     if (req.file) {
-        req.file = await processFile(req.file);
+        req.file = processFile(req.file);
     }
 
+    // Processar múltiplos arquivos (campos ou array)
     if (req.files) {
         if (Array.isArray(req.files)) {
-            req.files = await Promise.all(req.files.map(processFile));
+            req.files = req.files.map(processFile);
         } else {
             for (const field in req.files) {
-                req.files[field] = await Promise.all(req.files[field].map(processFile));
+                req.files[field] = req.files[field].map(processFile);
             }
         }
     }
 
     next();
 };
-
