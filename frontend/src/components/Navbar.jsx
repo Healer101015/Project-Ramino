@@ -13,8 +13,14 @@ const ProfileIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5
 const CloseIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>;
 const MenuIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16m-7 6h7" /></svg>;
 const BellIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>;
+// NOVO ÍCONE
+const CommunityIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>;
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+
+// ... (Manter GenericAvatar, useDebounce, SearchBar, NotificationBell, ProfileDropdown IGUAIS ao anterior) ...
+// Para economizar espaço, estou assumindo que você mantém os componentes auxiliares que já funcionavam.
+// O foco aqui é o componente Navbar principal abaixo.
 
 const GenericAvatar = ({ user, className }) => {
   const getInitials = (name) => !name ? "?" : name.trim().split(" ").filter(Boolean).map(p => p[0]).join('').toUpperCase().slice(0, 2);
@@ -148,8 +154,9 @@ const NotificationBell = () => {
 
   const getNotificationMessage = (notif) => {
     switch (notif.type) {
-      case 'FRIEND_REQUEST': return 'enviou um pedido de amizade.';
-      case 'FRIEND_ACCEPT': return 'aceitou seu pedido de amizade.';
+      case 'FRIEND_REQUEST': return 'enviou um pedido de amizade.'; // Legado
+      case 'FRIEND_ACCEPT': return 'aceitou seu pedido de amizade.'; // Legado
+      case 'FOLLOW': return 'começou a te seguir.';
       case 'LIKE': return 'curtiu sua publicação.';
       case 'COMMENT': return 'comentou na sua publicação.';
       case 'NEW_MESSAGE': return 'enviou uma nova mensagem.';
@@ -216,15 +223,10 @@ const ProfileDropdown = () => {
     navigate("/login");
   };
 
-  // Correção para avatar local
   let avatarUrl = null;
   if (user?.avatarUrl) {
-    avatarUrl = user.avatarUrl.startsWith('http')
-      ? user.avatarUrl
-      : `${API_URL}${user.avatarUrl}`;
+    avatarUrl = user.avatarUrl.startsWith('http') ? user.avatarUrl : `${API_URL}${user.avatarUrl}`;
   }
-
-  // Correção de ID: Usa _id ou id (fallback)
   const userId = user?._id || user?.id;
 
   return (
@@ -269,6 +271,9 @@ export default function Navbar() {
         <div className="hidden md:flex gap-4 items-center">
           {loading ? <SkeletonLoader /> : user ? (
             <>
+              <Link to="/communities" className="p-2 rounded-full hover:bg-gray-100 text-gray-600" title="Comunidades">
+                <CommunityIcon />
+              </Link>
               <SearchBar />
               <NotificationBell />
               <ProfileDropdown />
@@ -288,6 +293,9 @@ export default function Navbar() {
         <div id="mobile-menu" className="md:hidden px-4 pb-4 border-t">
           {loading ? <div className="animate-pulse bg-gray-200 h-12 w-full mt-4 rounded-lg"></div> : user ? (
             <div className="mt-4 space-y-4">
+              <Link to="/communities" className="flex items-center gap-2 text-gray-700 p-2 hover:bg-gray-100 rounded-lg">
+                <CommunityIcon /> Comunidades
+              </Link>
               <SearchBar />
               <div className="flex justify-between items-center border-t pt-4">
                 <ProfileDropdown />

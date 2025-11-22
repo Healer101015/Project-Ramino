@@ -1,5 +1,3 @@
-// backend/routes/posts.js
-
 import express from "express";
 import Post from "../models/Post.js";
 import Notification from "../models/Notification.js";
@@ -15,40 +13,81 @@ router.get("/", authRequired, async (req, res) => {
       .populate("user", "name avatarUrl _id")
       .populate("comments.user", "name avatarUrl _id")
       .populate("reactions.user", "name avatarUrl _id")
+      .populate("pollOptions.votes", "_id") // Popular votos para contagem (se necessário)
       .populate({
         path: 'repostOf',
         populate: [
           { path: 'user', select: 'name avatarUrl _id' },
-          { path: 'reactions.user', select: 'name avatarUrl _id' },
-          { path: 'comments.user', select: 'name avatarUrl _id' }
+          { path: 'reactions.user', select: 'name avatarUrl _id' }
         ]
       })
       .sort({ createdAt: -1 })
-      .limit(100);
+      .limit(50);
     res.json(posts);
   } catch (e) {
     res.status(500).json({ error: "Erro ao buscar posts" });
   }
 });
 
-// Criar Post (Fórum)
+// Criar Post (Genérico para todos os tipos)
 router.post("/", authRequired, upload.single("media"), handleUpload, async (req, res) => {
   try {
-    const { text, title, category } = req.body; // Recebe título e categoria
+    // Recebe os dados como string JSON se vierem de FormData complexo, ou direto do body
+    const { type, title, category, text, linkUrl, pollOptions, quizQuestions } = req.body;
 
-    const post = await Post.create({
+    // Parsear arrays se vierem como string (devido ao FormData do frontend)
+    let parsedPollOptions = [];
+    let parsedQuizQuestions = [];
+
+    if (pollOptions) {
+      try { parsedPollOptions = JSON.parse(pollOptions); } catch (e) { parsedPollOptions = []; }
+    }
+    if (quizQuestions) {
+      try { parsedQuizQuestions = JSON.parse(quizQuestions); } catch (e) { parsedQuizQuestions = []; }
+    }
+
+    const postData = {
       user: req.userId,
+      type: type || 'blog',
       title: title || "",
       category: category || "Geral",
       text: text || "",
       mediaUrl: req.file?.fileUrl || null,
-      mediaType: req.file?.attachmentType || null
-    });
+      mediaType: req.file?.attachmentType || null,
+      linkUrl: linkUrl || "",
+      pollOptions: parsedPollOptions,
+      quizQuestions: parsedQuizQuestions
+    };
 
+    const post = await Post.create(postData);
     res.json(await post.populate("user", "name avatarUrl _id"));
   } catch (error) {
     console.error("Erro ao criar post:", error);
     res.status(500).json({ error: "Erro interno no servidor" });
+  }
+});
+
+// Votar em Enquete
+router.post("/:id/vote", authRequired, async (req, res) => {
+  try {
+    const { optionIndex } = req.body;
+    const post = await Post.findById(req.params.id);
+    if (!post || post.type !== 'poll') return res.status(400).json({ error: "Enquete inválida" });
+
+    // Remove voto anterior se existir em qualquer opção
+    post.pollOptions.forEach(opt => {
+      opt.votes = opt.votes.filter(uid => uid.toString() !== req.userId);
+    });
+
+    // Adiciona novo voto
+    if (post.pollOptions[optionIndex]) {
+      post.pollOptions[optionIndex].votes.push(req.userId);
+    }
+
+    await post.save();
+    res.json(post); // Retorna o post atualizado
+  } catch (e) {
+    res.status(500).json({ error: "Erro ao votar" });
   }
 });
 
@@ -57,99 +96,51 @@ router.put("/:id", authRequired, async (req, res) => {
   try {
     const post = await Post.findById(req.params.id);
     if (!post) return res.status(404).json({ error: "Post não encontrado" });
-
-    if (post.user.toString() !== req.userId) {
-      return res.status(403).json({ error: "Não autorizado" });
-    }
+    if (post.user.toString() !== req.userId) return res.status(403).json({ error: "Não autorizado" });
 
     post.text = req.body.text || post.text;
-    post.title = req.body.title || post.title; // Atualiza título
-    post.category = req.body.category || post.category; // Atualiza categoria
+    post.title = req.body.title || post.title;
+    post.category = req.body.category || post.category;
     post.isEdited = true;
     await post.save();
 
-    const populatedPost = await Post.findById(post._id)
+    const populated = await Post.findById(post._id)
       .populate("user", "name avatarUrl _id")
       .populate("comments.user", "name avatarUrl _id")
       .populate("reactions.user", "name avatarUrl _id");
-    res.json(populatedPost);
+    res.json(populated);
   } catch (e) {
-    res.status(500).json({ error: "Falha ao editar o post." });
+    res.status(500).json({ error: "Falha ao editar." });
   }
 });
 
-// Reagir a um post
+// Reagir
 router.post("/:id/react", authRequired, async (req, res) => {
   const { reactionType } = req.body;
-  if (!['like', 'love', 'haha', 'sad'].includes(reactionType)) {
-    return res.status(400).json({ error: "Tipo de reação inválida" });
-  }
-
   try {
     const post = await Post.findById(req.params.id);
     if (!post) return res.status(404).json({ error: "Post não encontrado" });
 
-    const existingReactionIndex = post.reactions.findIndex(r => r.user.toString() === req.userId);
-
-    let added = false;
-    if (existingReactionIndex > -1) {
-      if (post.reactions[existingReactionIndex].type === reactionType) {
-        post.reactions.splice(existingReactionIndex, 1);
-      } else {
-        post.reactions[existingReactionIndex].type = reactionType;
-      }
+    const existingIdx = post.reactions.findIndex(r => r.user.toString() === req.userId);
+    if (existingIdx > -1) {
+      if (post.reactions[existingIdx].type === reactionType) post.reactions.splice(existingIdx, 1);
+      else post.reactions[existingIdx].type = reactionType;
     } else {
       post.reactions.push({ user: req.userId, type: reactionType });
-      added = true;
+      // Notificar
+      if (post.user.toString() !== req.userId) {
+        await Notification.create({ recipient: post.user, sender: req.userId, type: 'LIKE', postId: post._id });
+      }
     }
-
     await post.save();
 
-    // Notificar apenas se foi uma nova reação e não é o próprio dono
-    if (added && post.user.toString() !== req.userId) {
-      await Notification.create({
-        recipient: post.user,
-        sender: req.userId,
-        type: 'LIKE',
-        postId: post._id
-      });
-    }
-
-    const populatedPost = await Post.findById(post._id)
+    const populated = await Post.findById(post._id)
       .populate("user", "name avatarUrl _id")
       .populate("comments.user", "name avatarUrl _id")
       .populate("reactions.user", "name avatarUrl _id")
       .populate("repostOf");
-
-    res.json(populatedPost);
-  } catch (e) {
-    res.status(500).json({ error: "Erro ao reagir" });
-  }
-});
-
-// Partilhar um post
-router.post("/:id/share", authRequired, async (req, res) => {
-  try {
-    const originalPost = await Post.findById(req.params.id);
-    if (!originalPost) return res.status(404).json({ error: "Post original não encontrado" });
-
-    const sharePost = await Post.create({
-      user: req.userId,
-      text: req.body.text || "",
-      repostOf: originalPost._id,
-    });
-
-    const populatedShare = await sharePost.populate([
-      { path: 'user', select: 'name avatarUrl _id' },
-      {
-        path: 'repostOf',
-        populate: { path: 'user', select: 'name avatarUrl _id' }
-      }
-    ]);
-    res.status(201).json(populatedShare);
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+    res.json(populated);
+  } catch (e) { res.status(500).json({ error: "Erro ao reagir" }); }
 });
 
 // Comentar
@@ -158,17 +149,11 @@ router.post("/:id/comment", authRequired, async (req, res) => {
     const post = await Post.findById(req.params.id);
     if (!post) return res.status(404).json({ error: "Post não encontrado" });
 
-    const c = { user: req.userId, text: req.body.text };
-    post.comments.push(c);
+    post.comments.push({ user: req.userId, text: req.body.text });
     await post.save();
 
     if (post.user.toString() !== req.userId) {
-      await Notification.create({
-        recipient: post.user,
-        sender: req.userId,
-        type: 'COMMENT',
-        postId: post._id
-      });
+      await Notification.create({ recipient: post.user, sender: req.userId, type: 'COMMENT', postId: post._id });
     }
 
     const populated = await Post.findById(post._id)
@@ -176,30 +161,30 @@ router.post("/:id/comment", authRequired, async (req, res) => {
       .populate("comments.user", "name avatarUrl _id")
       .populate("reactions.user", "name avatarUrl _id")
       .populate("repostOf");
-
     res.json(populated);
-  } catch (e) {
-    res.status(500).json({ error: "Erro ao comentar" });
-  }
+  } catch (e) { res.status(500).json({ error: "Erro ao comentar" }); }
 });
 
-// Apagar post
+// Apagar
 router.delete("/:id", authRequired, async (req, res) => {
   try {
     const post = await Post.findById(req.params.id);
     if (!post) return res.status(404).json({ error: "Post não encontrado" });
-
-    if (post.user.toString() !== req.userId) {
-      return res.status(403).json({ error: "Não autorizado" });
-    }
-
+    if (post.user.toString() !== req.userId) return res.status(403).json({ error: "Não autorizado" });
     await post.deleteOne();
+    res.json({ message: "Deletado" });
+  } catch (e) { res.status(500).json({ error: "Erro ao deletar" }); }
+});
 
-    res.json({ message: "Post deletado com sucesso" });
-  } catch (e) {
-    console.error("Erro ao deletar post:", e);
-    res.status(500).json({ error: "Falha ao deletar o post." });
-  }
+// Partilhar
+router.post("/:id/share", authRequired, async (req, res) => {
+  try {
+    const original = await Post.findById(req.params.id);
+    if (!original) return res.status(404).json({ error: "Original não encontrado" });
+    const share = await Post.create({ user: req.userId, text: req.body.text || "", repostOf: original._id, type: 'blog' }); // Reposts geralmente são blogs simples
+    const pop = await share.populate([{ path: 'user', select: 'name avatarUrl _id' }, { path: 'repostOf', populate: { path: 'user', select: 'name avatarUrl _id' } }]);
+    res.status(201).json(pop);
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 export default router;
