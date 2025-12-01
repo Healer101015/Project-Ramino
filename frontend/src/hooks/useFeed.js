@@ -23,22 +23,25 @@ const feedReducer = (state, action) => {
     }
 };
 
-export const useFeed = (limit = 10) => {
+// Agora aceita communityId como segundo argumento
+export const useFeed = (limit = 10, communityId = null) => {
     const [state, dispatch] = useReducer(feedReducer, { posts: [], loading: true, error: null, page: 1, hasMore: true });
 
     const fetchPosts = useCallback(async (isInitial = true) => {
         dispatch({ type: 'FETCH_START' });
         try {
             const pageToFetch = isInitial ? 1 : state.page + 1;
-            const { data } = await api.get(`/posts?page=${pageToFetch}&limit=${limit}`);
+            // Adiciona o filtro de comunidade na URL se existir
+            const query = `/posts?page=${pageToFetch}&limit=${limit}${communityId ? `&community=${communityId}` : ''}`;
+
+            const { data } = await api.get(query);
             const hasMore = data.length === limit;
             dispatch({ type: isInitial ? 'FETCH_SUCCESS' : 'FETCH_MORE_SUCCESS', payload: { posts: data, hasMore } });
         } catch (err) {
             dispatch({ type: 'FETCH_ERROR', payload: 'Não foi possível carregar o feed.' });
         }
-    }, [state.page, limit]);
+    }, [state.page, limit, communityId]);
 
-    // Funções para manipulação otimista do estado
     const addPost = useCallback((post) => dispatch({ type: 'ADD_POST', payload: post }), []);
     const updatePost = useCallback((post) => dispatch({ type: 'UPDATE_POST', payload: post }), []);
     const removePost = useCallback((postId) => dispatch({ type: 'REMOVE_POST', payload: postId }), []);

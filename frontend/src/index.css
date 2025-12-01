@@ -3,61 +3,48 @@
 @tailwind utilities;
 
 :root {
-    --amino-green: #00D26A;
-    --amino-bg: #F2F4F7;
+    --amino-purple: #6200ea;
 }
 
 body {
-    background-color: var(--amino-bg);
-    color: #333333;
+    /* Fundo padrão claro para o Feed, mas a página de comunidades sobrescreve para escuro */
+    background-color: #f0f2f5;
     font-family: 'Inter', sans-serif;
-    -webkit-font-smoothing: antialiased;
-}
-
-.container-healer {
-    max-width: 1000px;
-    /* Amino é mais estreito/focado */
-    margin: 0 auto;
-    @apply w-full;
-}
-
-/* Scrollbar Estilo Amino (fino e discreto) */
-::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-}
-
-::-webkit-scrollbar-track {
-    background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-    background: #CFD8DC;
-    border-radius: 10px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-    background: #B0BEC5;
+    overscroll-behavior-y: none;
+    /* Sensação de app nativo */
 }
 
 /* Utilitários Amino */
-.btn-amino {
-    @apply bg-amino-green text-white font-bold rounded-full transition-transform active:scale-95 shadow-sm hover:shadow-md;
+.amino-gradient {
+    background: linear-gradient(90deg, #6200ea 0%, #a855f7 100%);
 }
 
-.card-amino {
-    @apply bg-white rounded-2xl border border-gray-100 shadow-amino;
+.card {
+    background: #ffffff;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+    overflow: hidden;
 }
 
-/* Animações Suaves */
-.animate-fade-in {
-    animation: fadeIn 0.3s ease-out;
+/* Remover scrollbar */
+.no-scrollbar::-webkit-scrollbar {
+    display: none;
 }
 
-@keyframes fadeIn {
+.no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+
+/* Animações suaves */
+.animate-fade-in-up {
+    animation: fadeInUp 0.5s ease-out;
+}
+
+@keyframes fadeInUp {
     from {
         opacity: 0;
-        transform: translateY(5px);
+        transform: translateY(10px);
     }
 
     to {

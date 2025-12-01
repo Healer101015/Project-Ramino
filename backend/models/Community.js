@@ -22,7 +22,7 @@ const CommunitySchema = new mongoose.Schema({
 
     // V5.0 - Personalização Visual
     appearance: {
-        primaryColor: { type: String, default: "#0ea5e9" }, // Cor principal (Hex)
+        primaryColor: { type: String, default: "#6200ea" }, // Cor principal (Hex) - Padrão Roxo Amino
         backgroundImage: { type: String, default: "" }, // Fundo da página
         theme: { type: String, enum: ['light', 'dark'], default: 'light' }
     },

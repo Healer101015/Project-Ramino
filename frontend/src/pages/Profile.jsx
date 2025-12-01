@@ -1,6 +1,5 @@
-// ... imports (mantenha os mesmos do código anterior)
 import { useEffect, useState, useCallback } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar.jsx";
 import PostCard from "../components/PostCard.jsx";
 import CreatePost from "../components/CreatePost.jsx";
@@ -8,231 +7,172 @@ import { api } from "../api";
 import { useAuth } from "../context/AuthContext.jsx";
 import { useChat } from "../context/ChatContext.jsx";
 
-// ... (Ícones e Helpers mantidos iguais)
-const UsersIcon = () => <span>👥</span>;
-const EyeIcon = () => <span>👁️</span>;
-const CalendarIcon = () => <span>📅</span>;
-const MessageIcon = () => <span>💬</span>;
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:4000";
 
-const getApiBase = () => import.meta.env.VITE_API_URL || "http://localhost:4000";
-const getFullUrl = (path) => !path ? "" : (path.startsWith('http') ? path : `${getApiBase()}${path}`);
-const getImageUrl = (path, name) => path ? getFullUrl(path) : `https://ui-avatars.com/api/?name=${encodeURIComponent(name || "?")}&background=random`;
-
-const THEMES = {
-  light: "bg-gray-50 text-gray-900",
-  dark: "bg-gray-900 text-gray-100",
-  ocean: "bg-blue-50 text-blue-900",
-  sunset: "bg-orange-50 text-orange-900",
-  cyberpunk: "bg-black text-green-400 font-mono",
+// Helper para imagens seguras
+const getSafeImageUrl = (url) => {
+  if (!url) return null;
+  if (url.startsWith('http')) return url;
+  if (url.includes('/uploads/')) return `${API_URL}${url}`;
+  return url;
 };
 
-// ... (UserListModal mantido igual)
-const UserListModal = ({ title, users, onClose }) => (
-  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
-    <div className="bg-white rounded-lg w-full max-w-md p-4 max-h-[80vh] overflow-y-auto text-gray-900" onClick={e => e.stopPropagation()}>
-      <h3 className="font-bold mb-4 border-b pb-2">{title}</h3>
-      {users.map(u => (
-        <Link key={u._id} to={`/profile/${u._id}`} onClick={onClose} className="flex items-center gap-3 p-2 hover:bg-gray-100 rounded">
-          <img src={getImageUrl(u.avatarUrl, u.name)} className="w-10 h-10 rounded-full object-cover" />
-          <span>{u.name}</span>
-        </Link>
-      ))}
-      {users.length === 0 && <p>Vazio.</p>}
+// --- Componente de Header do Perfil ---
+const ProfileHeader = ({ user, stats }) => {
+  const avatar = user.avatarUrl && !user.avatarUrl.includes("undefined")
+    ? getSafeImageUrl(user.avatarUrl)
+    : `https://ui-avatars.com/api/?name=${user.name}&background=random&color=fff&size=256`;
+
+  const cover = user.coverPhotoUrl ? getSafeImageUrl(user.coverPhotoUrl) : null;
+
+  return (
+    <div className="bg-white rounded-xl shadow-sm overflow-hidden mb-4">
+      {/* Capa */}
+      <div className="h-40 md:h-64 bg-gray-200 relative">
+        {cover ? (
+          <img src={cover} className="w-full h-full object-cover" alt="Capa" />
+        ) : (
+          <div className="w-full h-full bg-gradient-to-r from-violet-500 to-fuchsia-500"></div>
+        )}
+      </div>
+
+      {/* Dados do Usuário */}
+      <div className="px-4 pb-6 relative">
+        <div className="flex flex-col items-center md:flex-row md:items-end -mt-16 md:-mt-20 gap-4">
+
+          {/* Avatar Centralizado no Mobile */}
+          <div className="relative z-10">
+            <img
+              src={avatar}
+              className="w-32 h-32 md:w-40 md:h-40 rounded-full border-4 border-white object-cover shadow-lg bg-white"
+              alt={user.name}
+            />
+          </div>
+
+          {/* Nome e Bio */}
+          <div className="flex-1 text-center md:text-left mt-2 md:mt-0 md:mb-2 w-full">
+            <h1 className="text-2xl font-black text-gray-900">{user.name}</h1>
+            <p className="text-gray-500 text-sm mt-1 max-w-md mx-auto md:mx-0">{user.bio || "Nenhuma biografia."}</p>
+          </div>
+
+          {/* Estatísticas (Card Flutuante no Desktop, Bloco no Mobile) */}
+          <div className="flex gap-6 bg-gray-50 px-6 py-3 rounded-xl border border-gray-100 shadow-sm mt-2 md:mt-0">
+            <div className="text-center">
+              <span className="block font-black text-lg text-gray-800">{stats.followers}</span>
+              <span className="text-[10px] font-bold text-gray-400 uppercase">Seguidores</span>
+            </div>
+            <div className="text-center">
+              <span className="block font-black text-lg text-gray-800">{stats.following}</span>
+              <span className="text-[10px] font-bold text-gray-400 uppercase">Seguindo</span>
+            </div>
+            <div className="text-center">
+              <span className="block font-black text-lg text-yellow-500 flex items-center justify-center gap-1">
+                {stats.reputation} <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>
+              </span>
+              <span className="text-[10px] font-bold text-gray-400 uppercase">Reputação</span>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 export default function Profile() {
   const { id } = useParams();
   const { user: me } = useAuth();
-  const [data, setData] = useState(null);
+  const { openChat } = useChat();
+  const navigate = useNavigate();
+
+  const [profileData, setProfileData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('posts');
+  const [isFollowing, setIsFollowing] = useState(false);
 
-  const [modalType, setModalType] = useState(null);
-  const [modalUsers, setModalUsers] = useState([]);
-
-  const { openChat } = useChat();
-
-  const fetchData = useCallback(async () => {
-    if (!id || id === 'undefined') return;
-    setLoading(true);
+  const fetchProfile = useCallback(async () => {
     try {
-      const res = await api.get(`/users/${id}`);
-      setData(res.data);
-    } catch (e) { console.error(e); }
+      const { data } = await api.get(`/users/${id}`);
+      setProfileData(data);
+      if (me) setIsFollowing(data.user.followers.some(f => f._id === me._id));
+    } catch (error) { console.error(error); }
     finally { setLoading(false); }
-  }, [id]);
+  }, [id, me]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => { fetchProfile(); }, [fetchProfile]);
 
   const handleFollow = async () => {
     try {
-      if (data.followStatus === 'following') {
-        await api.post(`/users/${id}/unfollow`);
-        setData(prev => ({ ...prev, followStatus: 'none', followersCount: prev.followersCount - 1 }));
-      } else {
-        await api.post(`/users/${id}/follow`);
-        setData(prev => ({ ...prev, followStatus: 'following', followersCount: prev.followersCount + 1 }));
-      }
-    } catch (e) { alert("Erro ao seguir"); }
+      await api.post(`/users/${id}/${isFollowing ? 'unfollow' : 'follow'}`);
+      setIsFollowing(!isFollowing);
+      fetchProfile();
+    } catch (e) { console.error(e); }
   };
 
-  const openList = async (type) => {
-    const res = await api.get(`/users/${id}/${type}`);
-    setModalUsers(res.data);
-    setModalType(type === 'followers' ? 'Seguidores' : 'Seguindo');
+  const handlePostToWall = (newPost) => {
+    setProfileData(prev => ({ ...prev, wallPosts: [newPost, ...prev.wallPosts] }));
   };
 
-  // Handlers
-  const onWallPostCreated = (newPost) => {
-    // Adiciona o post criado imediatamente ao topo da lista do mural
-    setData(p => ({ ...p, wallPosts: [newPost, ...p.wallPosts] }));
-  };
+  if (loading) return <div className="min-h-screen flex items-center justify-center">Carregando...</div>;
+  if (!profileData) return <div className="text-center mt-10">Perfil não encontrado.</div>;
 
-  const onPostChange = (updated) => {
-    setData(p => ({
-      ...p,
-      posts: p.posts.map(x => x._id === updated._id ? updated : x),
-      wallPosts: p.wallPosts.map(x => x._id === updated._id ? updated : x)
-    }));
-  };
-
-  const onPostDelete = (pid) => {
-    setData(p => ({
-      ...p,
-      posts: p.posts.filter(x => x._id !== pid),
-      wallPosts: p.wallPosts.filter(x => x._id !== pid)
-    }));
-  };
-
-  if (loading) return <div className="min-h-screen bg-gray-50 flex items-center justify-center">Carregando...</div>;
-  if (!data?.user) return <div className="min-h-screen bg-gray-50 p-10 text-center">Usuário não encontrado</div>;
-
-  const { user, posts, wallPosts, followStatus, canChat, followersCount, followingCount } = data;
-  const themeClass = THEMES[user.theme] || THEMES.light;
+  const { user, posts, wallPosts } = profileData;
   const isMe = me?._id === user._id;
 
-  const pageStyle = user.pageBackgroundUrl ? {
-    backgroundImage: `url(${getFullUrl(user.pageBackgroundUrl)})`,
-    backgroundSize: 'cover',
-    backgroundAttachment: 'fixed',
-    backgroundPosition: 'center'
-  } : {};
-
-  const overlayClass = user.pageBackgroundUrl ? "bg-white/90 backdrop-blur-sm shadow-xl" : "";
-
   return (
-    <div className={`min-h-screen ${themeClass} transition-colors duration-300`} style={pageStyle}>
+    <div className="bg-[#f0f2f5] min-h-screen pb-20">
       <Navbar />
+      <div className="container-healer mt-4 px-3 md:px-0">
 
-      <div className={`container-healer mt-6 pb-10 ${overlayClass} rounded-xl`}>
-        {/* Header */}
-        <div className="relative h-64 bg-gray-300 rounded-t-xl overflow-hidden group">
-          {user.coverPhotoUrl && <img src={getFullUrl(user.coverPhotoUrl)} className="w-full h-full object-cover" />}
+        <ProfileHeader user={user} stats={{ followers: user.followers.length, following: user.following.length, reputation: user.reputation }} />
+
+        {/* Botões de Ação */}
+        <div className="bg-white rounded-xl p-3 mb-4 shadow-sm flex gap-3">
+          {isMe ? (
+            <button onClick={() => navigate('/settings')} className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-2.5 rounded-lg font-bold transition">Editar Perfil</button>
+          ) : (
+            <>
+              <button onClick={handleFollow} className={`flex-1 py-2.5 rounded-lg font-bold text-white transition ${isFollowing ? 'bg-gray-400' : 'bg-purple-600'}`}>{isFollowing ? 'Deixar de Seguir' : 'Seguir'}</button>
+              <button onClick={() => openChat(user)} className="flex-1 bg-blue-500 hover:bg-blue-600 text-white py-2.5 rounded-lg font-bold transition">Mensagem</button>
+            </>
+          )}
         </div>
 
-        <div className="px-6 relative">
-          <div className="-mt-20 mb-4 flex flex-col md:flex-row items-center md:items-end gap-4">
-            <img src={getImageUrl(user.avatarUrl, user.name)} className="w-40 h-40 rounded-full border-4 border-white shadow-lg object-cover bg-white" />
-            <div className="flex-1 text-center md:text-left mb-2">
-              <h1 className="text-3xl font-bold">{user.name}</h1>
-              <p className="opacity-80">{user.bio || "Sem biografia."}</p>
-            </div>
-            <div className="flex gap-3 mb-4">
-              {!isMe && (
-                <>
-                  <button onClick={handleFollow} className={`px-6 py-2 rounded-full font-bold transition ${followStatus === 'following' ? 'bg-red-100 text-red-600' : 'bg-sky-500 text-white'}`}>
-                    {followStatus === 'following' ? "Deixar de Seguir" : "Seguir"}
-                  </button>
-                  <button onClick={() => openChat(user)} disabled={!canChat} className="px-4 py-2 bg-gray-200 rounded-full disabled:opacity-50" title="Chat requer follow mútuo">
-                    <MessageIcon />
-                  </button>
-                </>
-              )}
-              {isMe && <Link to="/settings" className="px-6 py-2 bg-gray-200 rounded-full font-bold text-gray-700">Editar Perfil</Link>}
-            </div>
-          </div>
-
-          {/* Stats */}
-          <div className="flex justify-center md:justify-start gap-6 py-4 border-b border-gray-200/50 text-sm font-medium">
-            <button onClick={() => openList('followers')} className="hover:underline flex gap-1"><UsersIcon /> {followersCount} Seguidores</button>
-            <button onClick={() => openList('following')} className="hover:underline flex gap-1"><UsersIcon /> {followingCount} Seguindo</button>
-            <span className="flex gap-1 opacity-70"><EyeIcon /> {user.profileViews} Views</span>
-          </div>
-
-          {/* Tabs */}
-          <div className="flex mt-6 gap-6 border-b border-gray-200/50 mb-6">
-            {['posts', 'wall', 'gallery'].map(tab => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={`pb-3 px-2 font-bold uppercase tracking-wide text-sm transition border-b-2 ${activeTab === tab ? 'border-sky-500 text-sky-600' : 'border-transparent opacity-60 hover:opacity-100'}`}
-              >
-                {tab === 'posts' ? 'Publicações' : tab === 'wall' ? 'Mural' : 'Galeria'}
-              </button>
-            ))}
-          </div>
-
-          {/* Content */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="md:col-span-2">
-              {/* ABA POSTS (Feed do usuário) */}
-              {activeTab === 'posts' && (
-                <div className="space-y-4">
-                  {posts.length === 0 && <div className="text-center opacity-60 py-10 border-2 border-dashed rounded-xl">Este usuário ainda não publicou nada.</div>}
-                  {posts.map(p => <PostCard key={p._id} post={p} onChanged={onPostChange} onDelete={() => onPostDelete(p._id)} />)}
-                </div>
-              )}
-
-              {/* ABA MURAL (Posts feitos para este usuário) */}
-              {activeTab === 'wall' && (
-                <div className="space-y-4">
-                  {/* Caixa de criação de post NO MURAL */}
-                  <div className="bg-white/50 p-1 rounded-lg">
-                    <CreatePost onCreated={onWallPostCreated} targetUserId={user._id} />
-                  </div>
-
-                  {wallPosts.length === 0 && <div className="text-center opacity-60 py-10 border-2 border-dashed rounded-xl">Mural vazio. Deixe uma mensagem!</div>}
-                  {wallPosts.map(p => <PostCard key={p._id} post={p} onChanged={onPostChange} onDelete={() => onPostDelete(p._id)} />)}
-                </div>
-              )}
-
-              {/* ABA GALERIA */}
-              {activeTab === 'gallery' && (
-                <div>
-                  {user.gallery && user.gallery.length > 0 ? (
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                      {user.gallery.map((img, i) => (
-                        <div key={i} className="group relative aspect-square overflow-hidden rounded-xl shadow-sm cursor-pointer">
-                          <img src={getFullUrl(img)} className="w-full h-full object-cover transition duration-500 group-hover:scale-110" />
-                          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition"></div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : <div className="text-center opacity-60 py-10 border-2 border-dashed rounded-xl">Galeria vazia.</div>}
-                </div>
-              )}
-            </div>
-
-            {/* Sidebar Direita */}
-            <div className="hidden md:block space-y-4">
-              <div className="bg-white/50 p-5 rounded-xl border border-gray-200/50 shadow-sm">
-                <h4 className="font-bold mb-3 border-b border-gray-200/50 pb-2">Sobre</h4>
-                <p className="text-sm opacity-80 leading-relaxed whitespace-pre-wrap">{user.bio || "O usuário não escreveu uma biografia."}</p>
-              </div>
-              <div className="bg-white/50 p-5 rounded-xl border border-gray-200/50 shadow-sm">
-                <h4 className="font-bold mb-3 border-b border-gray-200/50 pb-2">Informações</h4>
-                <div className="text-sm opacity-70 space-y-2">
-                  <div className="flex items-center gap-2"><CalendarIcon /> Entrou em {new Date(user.createdAt).toLocaleDateString()}</div>
-                  {/* Aqui poderia ter mais infos como Localização, Link externo, etc */}
-                </div>
-              </div>
-            </div>
-          </div>
+        {/* Abas */}
+        <div className="flex bg-white rounded-t-xl px-2 border-b sticky top-16 z-10 shadow-sm">
+          {['posts', 'mural', 'about'].map(tab => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`flex-1 py-3 font-bold text-sm border-b-4 transition uppercase ${activeTab === tab ? 'border-purple-600 text-purple-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}
+            >
+              {tab === 'posts' ? 'Posts' : tab === 'mural' ? 'Mural' : 'Sobre'}
+            </button>
+          ))}
         </div>
 
-        {modalType && <UserListModal title={modalType} users={modalUsers} onClose={() => setModalType(null)} />}
+        {/* Conteúdo */}
+        <div className="bg-[#f0f2f5] pt-4 space-y-4">
+          {activeTab === 'posts' && (
+            <>
+              {isMe && <CreatePost onCreated={p => setProfileData(prev => ({ ...prev, posts: [p, ...prev.posts] }))} placeholder="O que está acontecendo?" />}
+              {posts.length > 0 ? posts.map(p => <PostCard key={p._id} post={p} />) : <div className="text-center py-10 text-gray-500 bg-white rounded-xl">Nenhum post.</div>}
+            </>
+          )}
+
+          {activeTab === 'mural' && (
+            <>
+              <CreatePost onCreated={handlePostToWall} postedTo={user._id} placeholder={`Escreva no mural de ${user.name}...`} />
+              {wallPosts.length > 0 ? wallPosts.map(p => <PostCard key={p._id} post={p} />) : <div className="text-center py-10 text-gray-500 bg-white rounded-xl">Mural vazio.</div>}
+            </>
+          )}
+
+          {activeTab === 'about' && (
+            <div className="bg-white p-6 rounded-xl shadow-sm space-y-4">
+              <div><h3 className="font-bold text-gray-900">Bio</h3><p className="text-gray-600">{user.bio || "Sem bio."}</p></div>
+              <div><h3 className="font-bold text-gray-900">Entrou em</h3><p className="text-gray-600">{new Date(user.createdAt).toLocaleDateString()}</p></div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

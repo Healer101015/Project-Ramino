@@ -1,70 +1,69 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { api } from "../api";
 import { Link } from "react-router-dom";
-import { useAuth } from "../context/AuthContext";
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
-export default function Sidebar() {
-  const { user } = useAuth();
-  const [myCommunities, setMyCommunities] = useState([]);
+const GenericAvatar = ({ user, className }) => {
+  const getInitials = (name) => !name ? "?" : name.trim().slice(0, 1).toUpperCase();
+  return (
+    <div className={`flex items-center justify-center rounded-full bg-gradient-to-br from-yellow-400 to-orange-500 text-white font-bold ${className}`}>
+      <span>{getInitials(user.name)}</span>
+    </div>
+  );
+};
 
-  useEffect(() => {
-    if (user) {
-      api.get("/communities").then(({ data }) => {
-        // Filtra as comunidades do usuário
-        const myComms = data.filter(c => c.members.includes(user._id || user.id));
-        setMyCommunities(myComms);
-      });
-    }
-  }, [user]);
+const useFriendSuggestions = () => {
+  const [suggestions, setSuggestions] = useState([]);
+  const fetchSuggestions = useCallback(async () => {
+    try {
+      const [{ data: meData }, { data: usersData }] = await Promise.all([
+        api.get("/users/me"),
+        api.get("/users/search?q="),
+      ]);
+      const filteredUsers = usersData.filter(user =>
+        user._id !== meData._id && !meData.friends.includes(user._id)
+      ).slice(0, 10);
+      setSuggestions(filteredUsers);
+    } catch (err) { console.error(err); }
+  }, []);
+  useEffect(() => { fetchSuggestions(); }, [fetchSuggestions]);
+  return { suggestions };
+};
+
+export default function Sidebar() {
+  const { suggestions } = useFriendSuggestions();
+
+  if (suggestions.length === 0) return null;
 
   return (
-    <div className="space-y-6 sticky top-24">
-      {/* Cartão de Perfil Mini */}
-      <div className="card-amino p-6 text-center">
-        <div className="relative inline-block">
-          <img
-            src={user?.avatarUrl ? (user.avatarUrl.startsWith('http') ? user.avatarUrl : `${API_URL}${user.avatarUrl}`) : `https://ui-avatars.com/api/?name=${user?.name}`}
-            className="w-20 h-20 rounded-full object-cover border-4 border-white shadow-md mx-auto"
-          />
-          <div className="absolute bottom-0 right-0 bg-amino-green w-5 h-5 rounded-full border-4 border-white"></div>
-        </div>
-        <h2 className="mt-3 font-bold text-lg text-gray-800">{user?.name}</h2>
-        <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mt-1">Membro</p>
+    <div className="bg-white md:rounded-xl md:shadow-sm md:p-4 mb-4">
+      {/* Título desktop */}
+      <h3 className="hidden md:block font-bold text-gray-700 mb-3 text-sm uppercase tracking-wide">Sugeridos</h3>
 
-        <div className="mt-4 flex justify-center gap-4 text-sm border-t pt-4 border-gray-50">
-          <div className="text-center">
-            <div className="font-bold text-gray-800">{user?.followers?.length || 0}</div>
-            <div className="text-xs text-gray-400">Seguidores</div>
-          </div>
-          <div className="text-center">
-            <div className="font-bold text-gray-800">{user?.following?.length || 0}</div>
-            <div className="text-xs text-gray-400">Seguindo</div>
-          </div>
-        </div>
-      </div>
+      {/* Layout Mobile: Horizontal Scroll (Estilo Stories Amino) */}
+      <div className="flex md:flex-col gap-4 overflow-x-auto no-scrollbar py-3 px-4 md:p-0 bg-white shadow-sm md:shadow-none">
+        {suggestions.map(user => {
+          let avatarUrl = user.avatarUrl ? (user.avatarUrl.includes("/uploads/") ? `${API_URL}${user.avatarUrl}` : user.avatarUrl) : null;
 
-      {/* Lista de Comunidades Estilo Amino */}
-      <div className="card-amino p-5">
-        <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4">Os Meus Aminos</h3>
-        <div className="space-y-3">
-          {myCommunities.map(c => (
-            <Link to={`/communities/${c._id}`} key={c._id} className="flex items-center gap-3 group p-2 rounded-xl hover:bg-gray-50 transition">
-              <img
-                src={c.avatarUrl ? `${API_URL}${c.avatarUrl}` : `https://ui-avatars.com/api/?name=${c.name}`}
-                className="w-10 h-10 rounded-xl object-cover shadow-sm group-hover:scale-110 transition duration-300"
-              />
-              <span className="font-bold text-gray-700 text-sm truncate group-hover:text-amino-green transition">{c.name}</span>
+          return (
+            <Link to={`/profile/${user._id}`} key={user._id} className="flex flex-col md:flex-row items-center gap-2 md:gap-3 min-w-[70px] md:min-w-0">
+              <div className="relative">
+                {avatarUrl ? (
+                  <img src={avatarUrl} alt={user.name} className="w-14 h-14 md:w-10 md:h-10 rounded-full object-cover border-2 border-purple-500 p-0.5" />
+                ) : (
+                  <GenericAvatar user={user} className="w-14 h-14 md:w-10 md:h-10 text-xl md:text-sm border-2 border-purple-500 p-0.5" />
+                )}
+                <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>
+              </div>
+              <div className="text-center md:text-left">
+                <span className="block text-[10px] md:text-sm font-semibold text-gray-800 truncate w-16 md:w-auto">{user.name.split(' ')[0]}</span>
+                <span className="hidden md:block text-xs text-gray-500">Membro novo</span>
+              </div>
             </Link>
-          ))}
-          {myCommunities.length === 0 && <p className="text-sm text-gray-400 italic">Ainda não entraste em nenhum Amino.</p>}
-
-          <Link to="/communities" className="block mt-4 text-center py-2 border-2 border-dashed border-gray-200 rounded-xl text-xs font-bold text-gray-400 hover:border-amino-green hover:text-amino-green transition">
-            + Explorar
-          </Link>
-        </div>
+          )
+        })}
       </div>
     </div>
   );
-}//preciso tirar algumas requisições desnecessárias e lembrar de usar .opened nos endpoint de select
+}
